@@ -16,13 +16,17 @@ class MLReadinessAuditRegressionTests(unittest.TestCase):
 
     def test_coverage_and_identifier_eras(self):
         coverage = self.load("coverage_summary.json")
-        self.assertEqual(coverage["dataset"]["project_month_rows"], 28581)
-        self.assertEqual(coverage["dataset"]["unique_source_project_codes"], 4029)
+        self.assertEqual(coverage["dataset"]["project_month_rows"], 46568)
+        self.assertEqual(coverage["dataset"]["unique_source_project_codes"], 4412)
         self.assertEqual(coverage["dataset"]["missing_project_codes"], 0)
         self.assertEqual(coverage["dataset"]["duplicate_project_month_keys"], 0)
         self.assertEqual(
             coverage["identifier_eras"]["six_digit_id_era"]["projects_present_in_every_era_month"],
             552,
+        )
+        self.assertEqual(
+            coverage["identifier_eras"]["legacy_id_era"]["projects_present_in_every_era_month"],
+            1253,
         )
         june = next(row for row in coverage["monthly"] if row["report_month"] == "2025-06")
         july = next(row for row in coverage["monthly"] if row["report_month"] == "2025-07")
@@ -31,22 +35,23 @@ class MLReadinessAuditRegressionTests(unittest.TestCase):
 
     def test_structural_missingness_and_event_counts(self):
         missing = self.load("field_missingness.json")
-        self.assertEqual(missing["overall"]["fields"]["ministry"]["structurally_absent"], 9980)
-        self.assertEqual(missing["overall"]["fields"]["start_date"]["structurally_absent"], 10771)
+        self.assertEqual(missing["overall"]["fields"]["ministry"]["structurally_absent"], 27967)
+        self.assertEqual(missing["overall"]["fields"]["start_date"]["structurally_absent"], 28758)
+        self.assertEqual(missing["overall"]["fields"]["physical_progress"]["structurally_absent"], 5596)
         self.assertEqual(missing["overall"]["fields"]["project_code"]["source_missing"], 0)
         events = self.load("event_audit.json")
-        self.assertEqual(events["revised_cost"]["overall"]["upward_changes"], 180)
-        self.assertEqual(events["revised_cost"]["overall"]["downward_changes"], 103)
-        self.assertEqual(events["revised_completion_date"]["overall"]["upward_changes"], 2281)
-        self.assertEqual(events["physical_progress"]["adjacent_changes"]["reported_decreases_or_corrections"], 419)
-        self.assertEqual(events["cumulative_expenditure"]["adjacent_changes"]["positive_to_zero_resets"], 15)
+        self.assertEqual(events["revised_cost"]["overall"]["upward_changes"], 224)
+        self.assertEqual(events["revised_cost"]["overall"]["downward_changes"], 115)
+        self.assertEqual(events["revised_completion_date"]["overall"]["upward_changes"], 2737)
+        self.assertEqual(events["physical_progress"]["adjacent_changes"]["reported_decreases_or_corrections"], 674)
+        self.assertEqual(events["cumulative_expenditure"]["adjacent_changes"]["positive_to_zero_resets"], 20)
 
     def test_horizon_eligibility_and_manifest_are_read_only(self):
         horizons = self.load("horizon_eligibility.json")
         legacy = horizons["eras"]["legacy_id_era"]["horizons_months"]
         modern = horizons["eras"]["six_digit_id_era"]["horizons_months"]
-        self.assertEqual(legacy["3"]["complete_project_history_observations"], 4753)
-        self.assertEqual(legacy["6"]["complete_project_history_observations"], 0)
+        self.assertEqual(legacy["3"]["complete_project_history_observations"], 16478)
+        self.assertEqual(legacy["6"]["complete_project_history_observations"], 11014)
         self.assertEqual(modern["12"]["complete_project_history_observations"], 552)
         manifest = self.load("audit_manifest.json")
         self.assertFalse(manifest["canonical_files_written"])
@@ -54,7 +59,7 @@ class MLReadinessAuditRegressionTests(unittest.TestCase):
         self.assertFalse(manifest["completed_projects_extracted"])
         self.assertEqual(
             manifest["source_combined_sha256"],
-            "A366C2BA57055BE107EF687373477F1704242E00D64ABECFEC59AFD93CC1BB91",
+            "FE115E5FE71CC70552669FC4E0ACC2699B14CFE7545A319EEAEAF577E4DB95C3",
         )
 
 

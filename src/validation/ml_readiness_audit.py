@@ -12,17 +12,38 @@ from typing import Any, Iterable
 
 
 MONTHS = [
+    "2024-01",
+    "2024-02",
+    "2024-03",
+    "2024-06",
+    "2024-07",
+    "2024-08",
+    "2024-09",
+    "2024-10",
+    "2024-11",
+    "2024-12",
     *[f"2025-{month:02d}" for month in range(1, 13)],
     *[f"2026-{month:02d}" for month in range(1, 8)],
 ]
 ERAS = {
-    "legacy_id_era": MONTHS[:6],
-    "six_digit_id_era": MONTHS[6:],
+    "legacy_id_era": [month for month in MONTHS if month <= "2025-06"],
+    "six_digit_id_era": [month for month in MONTHS if month >= "2025-07"],
 }
 VERIFIED_LAYOUT_BY_MONTH = {
-    **{month: "legacy-all-ongoing-nine-column-v1" for month in MONTHS[:6]},
+    "2024-01": "legacy-detail-ongoing-nine-column-milestones-v1",
+    "2024-02": "legacy-detail-ongoing-nine-column-milestones-v1",
+    "2024-03": "legacy-detail-ongoing-nine-column-milestones-v1",
+    "2024-06": "legacy-all-ongoing-nine-column-v1",
+    "2024-07": "legacy-all-ongoing-nine-column-v1",
+    "2024-08": "legacy-all-ongoing-nine-column-v1",
+    "2024-09": "legacy-all-ongoing-nine-column-v1",
+    "2024-10": "legacy-all-ongoing-nine-column-v1",
+    "2024-11": "legacy-all-ongoing-nine-column-progress-only-v1",
+    "2024-12": "legacy-all-ongoing-nine-column-v1",
+    **{f"2025-{month:02d}": "legacy-all-ongoing-nine-column-v1" for month in range(1, 7)},
     "2025-07": "table6-eight-column-approval-only-v1",
-    **{month: "table6-eight-column-v1" for month in MONTHS[7:]},
+    **{f"2025-{month:02d}": "table6-eight-column-v1" for month in range(8, 13)},
+    **{f"2026-{month:02d}": "table6-eight-column-v1" for month in range(1, 8)},
 }
 MODELLING_FIELDS = [
     "project_code",
@@ -41,7 +62,9 @@ MODELLING_FIELDS = [
     "physical_progress",
 ]
 STRUCTURALLY_ABSENT = {
+    "legacy-detail-ongoing-nine-column-milestones-v1": {"ministry", "start_date", "physical_progress"},
     "legacy-all-ongoing-nine-column-v1": {"ministry", "start_date"},
+    "legacy-all-ongoing-nine-column-progress-only-v1": {"ministry", "start_date"},
     "table6-eight-column-approval-only-v1": {"start_date"},
     "table6-eight-column-v1": set(),
 }
@@ -64,6 +87,17 @@ def month_number(value: str) -> int:
 
 def month_distance(earlier: str, later: str) -> int:
     return month_number(later) - month_number(earlier)
+
+
+def get_consecutive_calendar_months(start_m: str, horizon: int) -> list[str]:
+    y, m = int(start_m[:4]), int(start_m[5:7])
+    res = []
+    for step in range(horizon + 1):
+        cur_m = m + step
+        cur_y = y + (cur_m - 1) // 12
+        cur_m = (cur_m - 1) % 12 + 1
+        res.append(f"{cur_y:04d}-{cur_m:02d}")
+    return res
 
 
 def quantile(values: list[float], probability: float) -> float | None:
@@ -161,6 +195,7 @@ def observation_summary(rows: list[dict[str, str]], era_months: list[str]) -> di
         "projects_with_at_least_6_observations": sum(value >= 6 for value in counts),
         "projects_with_at_least_9_observations": sum(value >= 9 for value in counts),
         "projects_with_at_least_12_observations": sum(value >= 12 for value in counts),
+        "projects_with_at_least_16_observations": sum(value >= 16 for value in counts),
         "projects_present_in_every_era_month": sum(value == len(era_months) for value in counts),
     }
 
@@ -179,6 +214,19 @@ def monthly_coverage(rows: list[dict[str, str]], layouts: dict[str, str]) -> lis
                 if index + 1 < len(era_months)
                 else None
             )
+            note = (
+                "initial era stock; no prior same-era month"
+                if previous is None
+                else (
+                    "end of identifier era; June-to-July redesign is not churn"
+                    if month == "2025-06"
+                    else (
+                        "comparison across 3-month gap (April/May uncoded)"
+                        if month == "2024-06"
+                        else ("right-censored dataset endpoint" if following is None else "same-era comparison")
+                    )
+                )
+            )
             result.append(
                 {
                     "report_month": month,
@@ -192,15 +240,7 @@ def monthly_coverage(rows: list[dict[str, str]], layouts: dict[str, str]) -> lis
                     "project_codes_disappearing_before_next_same_era_month": (
                         None if following is None else len(current - following)
                     ),
-                    "comparison_note": (
-                        "initial era stock; no prior same-era month"
-                        if previous is None
-                        else (
-                            "end of identifier era; June-to-July redesign is not churn"
-                            if month == "2025-06"
-                            else ("right-censored dataset endpoint" if following is None else "same-era comparison")
-                        )
-                    ),
+                    "comparison_note": note,
                 }
             )
     return result
@@ -506,26 +546,114 @@ def horizon_eligibility(rows: list[dict[str, str]]) -> dict[str, Any]:
     }
     for era, era_months in ERAS.items():
         era_rows = [row for row in rows if row["_era"] == era]
-        positions = {month: index for index, month in enumerate(era_months)}
+        era_months_set = set(era_months)
+        grouped_p = group_by_project(era_rows)
         project_months = {
-            project: {row["report_month"] for row in project_rows}
-            for project, project_rows in group_by_project(era_rows).items()
+            project: {row["report_month"]: row for row in project_rows}
+            for project, project_rows in grouped_p.items()
         }
         horizons = {}
         for horizon in [1, 3, 6, 12]:
             coverage_ceiling = 0
             complete = 0
+            cost_comp = 0
+            cost_up_endpoint = 0
+            cost_up_any = 0
+            sched_comp = 0
+            sched_up_endpoint = 0
+            sched_up_any = 0
+            prog_comp = 0
+            prog_stagnant = 0
+            exp_comp = 0
+            exp_stagnant = 0
+
             for row in era_rows:
-                position = positions[row["report_month"]]
-                if position + horizon >= len(era_months):
-                    continue
-                coverage_ceiling += 1
-                required = set(era_months[position : position + horizon + 1])
-                if required.issubset(project_months[row["project_code"]]):
-                    complete += 1
+                p = row["project_code"]
+                T = row["report_month"]
+                req_months = get_consecutive_calendar_months(T, horizon)
+
+                if set(req_months).issubset(era_months_set):
+                    coverage_ceiling += 1
+                    p_month_dict = project_months[p]
+                    if set(req_months).issubset(set(p_month_dict.keys())):
+                        complete += 1
+                        window_rows = [p_month_dict[m] for m in req_months]
+
+                        # Cost
+                        c_start = numeric(window_rows[0]["revised_cost"])
+                        c_end = numeric(window_rows[-1]["revised_cost"])
+                        if c_start is not None and c_end is not None:
+                            cost_comp += 1
+                            if c_end > c_start:
+                                cost_up_endpoint += 1
+                        costs_in_win = [
+                            numeric(w["revised_cost"])
+                            for w in window_rows
+                            if numeric(w["revised_cost"]) is not None
+                        ]
+                        if len(costs_in_win) >= 2 and max(costs_in_win) > costs_in_win[0]:
+                            cost_up_any += 1
+
+                        # Schedule
+                        d_start = window_rows[0]["revised_completion_date"]
+                        d_end = window_rows[-1]["revised_completion_date"]
+                        if d_start and d_end:
+                            sched_comp += 1
+                            if month_distance(d_start, d_end) > 0:
+                                sched_up_endpoint += 1
+                        dates_in_win = [
+                            w["revised_completion_date"]
+                            for w in window_rows
+                            if w["revised_completion_date"]
+                        ]
+                        if len(dates_in_win) >= 2 and any(
+                            month_distance(dates_in_win[0], d) > 0 for d in dates_in_win[1:]
+                        ):
+                            sched_up_any += 1
+
+                        # Progress stagnation
+                        p_start = numeric(window_rows[0]["physical_progress"])
+                        p_end = numeric(window_rows[-1]["physical_progress"])
+                        if p_start is not None and p_end is not None:
+                            prog_comp += 1
+                            if p_end == p_start:
+                                prog_stagnant += 1
+
+                        # Expenditure stagnation
+                        e_start = numeric(window_rows[0]["cumulative_expenditure"])
+                        e_end = numeric(window_rows[-1]["cumulative_expenditure"])
+                        if e_start is not None and e_end is not None:
+                            exp_comp += 1
+                            if e_end == e_start:
+                                exp_stagnant += 1
+
             horizons[str(horizon)] = {
                 "complete_project_history_observations": complete,
                 "calendar_coverage_ceiling_observations": coverage_ceiling,
+                "observable_events": {
+                    "cost_escalation": {
+                        "comparable_windows": cost_comp,
+                        "upward_endpoint_changes": cost_up_endpoint,
+                        "upward_endpoint_rate": rounded(cost_up_endpoint / cost_comp if cost_comp else None),
+                        "any_upward_window_changes": cost_up_any,
+                    },
+                    "schedule_revision": {
+                        "comparable_windows": sched_comp,
+                        "upward_endpoint_extensions": sched_up_endpoint,
+                        "upward_endpoint_rate": rounded(sched_up_endpoint / sched_comp if sched_comp else None),
+                        "any_upward_window_extensions": sched_up_any,
+                    },
+                    "physical_progress_stagnation": {
+                        "comparable_windows": prog_comp,
+                        "stagnant_observations": prog_stagnant,
+                        "stagnation_rate": rounded(prog_stagnant / prog_comp if prog_comp else None),
+                    },
+                    "cumulative_expenditure_stagnation": {
+                        "comparable_windows": exp_comp,
+                        "stagnant_observations": exp_stagnant,
+                        "stagnation_rate": rounded(exp_stagnant / exp_comp if exp_comp else None),
+                    },
+                },
             }
         result["eras"][era] = {
             "months": era_months,
@@ -549,17 +677,17 @@ def leakage_risk() -> dict[str, Any]:
             {"field": "pmgid", "classification": "IDENTIFIER_ONLY", "reason": "Identifier/provenance only."},
             {"field": "project_name", "classification": "IDENTIFIER_ONLY", "reason": "Near-unique text can memorize project identity; any future text analysis requires grouped temporal evaluation and a separate normalized representation."},
             {"field": "agency", "classification": "SAFE_BASE_FEATURE", "reason": "Source-reported category known at T, subject to label drift and sparse levels."},
-            {"field": "ministry", "classification": "CONDITIONALLY_SAFE", "reason": "Known at T where present, but structurally absent in the legacy layout and missingness strongly encodes era/schema."},
+            {"field": "ministry", "classification": "CONDITIONALLY_SAFE", "reason": "Known at T where present, but structurally absent in legacy layouts (100% of legacy era) and missingness strongly encodes era/schema."},
             {"field": "sector", "classification": "SAFE_BASE_FEATURE", "reason": "Source-reported category known at T; preserve exact labels and handle sparse levels only in a separate analytical layer."},
             {"field": "state", "classification": "SAFE_BASE_FEATURE", "reason": "Source-reported geography known at T, with multi-state/text conventions requiring careful analytical encoding."},
             {"field": "approval_date", "classification": "SAFE_BASE_FEATURE", "reason": "Historical date known by T; derived age would be feature engineering and is not created here."},
-            {"field": "start_date", "classification": "CONDITIONALLY_SAFE", "reason": "Historical state known at T where present, but structurally absent through July 2025 and therefore strongly tied to layout/era."},
+            {"field": "start_date", "classification": "CONDITIONALLY_SAFE", "reason": "Historical state known at T where present, but structurally absent through July 2025 (61.75% of dataset) and therefore strongly tied to layout/era."},
             {"field": "original_completion_date", "classification": "SAFE_BASE_FEATURE", "reason": "Baseline schedule known at T; safe when taken strictly from the T snapshot."},
             {"field": "revised_completion_date", "classification": "LIKELY_LEAKAGE_FOR_CERTAIN_TARGETS", "reason": "Legitimate state at T for predicting a later revision, but direct leakage if the target is defined as whether a revision already exists or current delay."},
             {"field": "original_cost", "classification": "SAFE_BASE_FEATURE", "reason": "Baseline cost known at T; safe when source-present and measured at T."},
             {"field": "revised_cost", "classification": "LIKELY_LEAKAGE_FOR_CERTAIN_TARGETS", "reason": "Legitimate state at T for future-horizon escalation, but direct leakage for targets based on current escalation or any revision to date."},
             {"field": "cumulative_expenditure", "classification": "CONDITIONALLY_SAFE", "reason": "T-snapshot value can describe current state; any later snapshot or future-derived delta leaks future information. Zero reporting is agency-dependent."},
-            {"field": "physical_progress", "classification": "CONDITIONALLY_SAFE", "reason": "T-snapshot value is historical state, but future progress or stagnation-window summaries must not enter predictors for the same horizon."},
+            {"field": "physical_progress", "classification": "CONDITIONALLY_SAFE", "reason": "T-snapshot value is historical state, but future progress or stagnation-window summaries must not enter predictors for the same horizon. Structurally absent in Jan-Mar 2024."},
             {"field": "report_month", "classification": "CONDITIONALLY_SAFE", "reason": "Needed for temporal splitting and regime controls; can encode schema/reporting changes and should not support random row splits."},
             {"field": "*_raw", "classification": "IDENTIFIER_ONLY", "reason": "Audit/source representation; parsed canonical state should be preferred for modelling while raw values remain available for traceability."},
             {"field": "source_file/source_page/source_pages/source_row_number/source_serial_number/extraction_method", "classification": "IDENTIFIER_ONLY", "reason": "Provenance and extraction metadata; using them as predictors would encode report layout/order rather than project risk."},
@@ -581,10 +709,10 @@ def write_json(path: Path, payload: Any) -> None:
 
 def run(root: Path) -> dict[str, Any]:
     rows, layouts = load_rows(root)
-    if len(rows) != 28581:
+    if len(rows) != 46568:
         raise ValueError(f"Unexpected canonical row count: {len(rows)}")
     if sorted({row["report_month"] for row in rows}) != MONTHS:
-        raise ValueError("Canonical month coverage differs from the accepted 19-month baseline")
+        raise ValueError("Canonical month coverage differs from the accepted 29-month baseline")
 
     era_summaries = {}
     for era, era_months in ERAS.items():
