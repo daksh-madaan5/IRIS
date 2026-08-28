@@ -74,6 +74,40 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(parsed.project_code, "612183")
         self.assertIsNone(parsed.legacy_ocms_code)
 
+    def test_detail_milestones_row_cleaning(self):
+        from src.extraction.pipeline import _clean_detail_milestones_row
+        pending = {
+            "serial": 1,
+            "source_page": 96,
+            "source_pages": "96",
+            "source_row_number": 2,
+            "sector": "ATOMIC ENERGY",
+            "cells": [
+                "1",
+                "PROTOTYPE FAST BREEDER REACTOR (BHAVINI, 500 MWE) - [020100044],BHAVNI,TAMIL NADU",
+                "10/2003",
+                "9/2007\n(-)\n[12/2024]",
+                "3492\n(5677)\n{6840}",
+                "6209.77\n2185\n207",
+                "33 / 37",
+            ],
+        }
+        cleaned = _clean_detail_milestones_row(pending, "2024-01", "FR_jan_2024.pdf")
+        self.assertEqual(cleaned["project_code"], "020100044")
+        self.assertEqual(cleaned["project_name"], "PROTOTYPE FAST BREEDER REACTOR (BHAVINI, 500 MWE)")
+        self.assertEqual(cleaned["agency"], "BHAVNI")
+        self.assertEqual(cleaned["state"], "TAMIL NADU")
+        self.assertEqual(cleaned["sector"], "ATOMIC ENERGY")
+        self.assertIsNone(cleaned["ministry"])
+        self.assertIsNone(cleaned["start_date"])
+        self.assertIsNone(cleaned["physical_progress"])
+        self.assertEqual(cleaned["approval_date"], "2003-10")
+        self.assertEqual(cleaned["original_completion_date"], "2007-09")
+        self.assertIsNone(cleaned["revised_completion_date"])
+        self.assertEqual(cleaned["original_cost"], 3492.0)
+        self.assertEqual(cleaned["revised_cost"], 5677.0)
+        self.assertEqual(cleaned["cumulative_expenditure"], 6209.77)
+
 
 if __name__ == "__main__":
     unittest.main()

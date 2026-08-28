@@ -99,17 +99,35 @@ LEGACY_ANNEXURE_XVIII_HEADER_SIGNATURE = (
     ("expenditure",),
 )
 ANNEXURE_XVIII_LAYOUT = "legacy-annexure-xviii-six-column-v1"
+LEGACY_DETAIL_MILESTONES_LAYOUT = "legacy-detail-ongoing-nine-column-milestones-v1"
+LEGACY_DETAIL_MILESTONES_HEADER_SIGNATURE = (
+    ("si.no",),
+    ("project",),
+    ("date of", "approval"),
+    (),
+    ("original", "revised", "anticipated", "date of", "commissioning"),
+    ("original", "revised", "anticipated", "cost"),
+    ("cumulative", "expenditure", "cost overrun", "time overrun"),
+    (),
+    ("miles tones", "achieved", "total"),
+)
 TABLE6_LAYOUT_SIGNATURES = {
     "table6-eight-column-v1": TABLE6_HEADER_SIGNATURE,
     "table6-eight-column-approval-only-v1": TABLE6_APPROVAL_ONLY_HEADER_SIGNATURE,
     "legacy-all-ongoing-nine-column-v1": LEGACY_ALL_ONGOING_HEADER_SIGNATURE,
     "legacy-all-ongoing-nine-column-progress-only-v1": LEGACY_ALL_ONGOING_PROGRESS_ONLY_HEADER_SIGNATURE,
     ANNEXURE_XVIII_LAYOUT: LEGACY_ANNEXURE_XVIII_HEADER_SIGNATURE,
+    LEGACY_DETAIL_MILESTONES_LAYOUT: LEGACY_DETAIL_MILESTONES_HEADER_SIGNATURE,
 }
 LEGACY_LAYOUTS = {
     "legacy-all-ongoing-nine-column-v1",
     "legacy-all-ongoing-nine-column-progress-only-v1",
     ANNEXURE_XVIII_LAYOUT,
+    LEGACY_DETAIL_MILESTONES_LAYOUT,
+}
+STATE_SECTOR_COLUMN_LAYOUTS = {
+    "legacy-all-ongoing-nine-column-v1",
+    "legacy-all-ongoing-nine-column-progress-only-v1",
 }
 ANNEXURE_XVIII_STATES = {
     "ANDAMAN AND NICOBAR ISLANDS", "ANDHRA PRADESH", "ARUNACHAL PRADESH", "ASSAM", "BIHAR",
@@ -125,6 +143,15 @@ ANNEXURE_XVIII_SECTORS = {
     "power", "railways", "renewable energy", "road transport and highways", "shipping and ports",
     "social justice", "steel", "telecommunications", "urban development", "water resources"
 }
+DETAIL_MILESTONES_SECTORS = {
+    "ATOMIC ENERGY", "CIVIL AVIATION", "COAL", "DEFENCE PRODUCTION",
+    "DEPARTMENT OF HIGHER EDUCATION", "DONER", "DPIIT", "FINANCE",
+    "HEALTH AND FAMILY WELFARE", "HOME AFFAIRS", "MINES", "PETROLEUM",
+    "POWER", "RAILWAYS", "RENEWABLE ENERGY", "ROAD TRANSPORT AND HIGHWAYS",
+    "SHIPPING AND PORTS", "SOCIAL JUSTICE", "STEEL", "TELECOMMUNICATIONS",
+    "URBAN DEVELOPMENT", "WATER RESOURCES",
+}
+DETAIL_MILESTONES_CODE_RE = re.compile(r"\[(N\d{8}|\d{9})\]")
 MONTH_NAMES = {
     name.upper(): index
     for index, name in enumerate(
@@ -293,7 +320,10 @@ def _is_table6_page(text: str) -> bool:
     annexure_xviii = "details of ongoing projects" in normalized and any(
         token in normalized for token in ("annexure xviii", "annexure - xviii", "annexure-xviii")
     )
-    return current or legacy or legacy_continuation or annexure_xviii
+    detail_milestones = "costing rs 150 crore and above" in normalized and any(
+        token in normalized for token in ("detail of ongoing projects", "details of ongoing projects")
+    )
+    return current or legacy or legacy_continuation or annexure_xviii or detail_milestones
 
 
 def _detect_report_month(text: str, filename: str, pdf_path: Path | None = None) -> str:
@@ -371,7 +401,7 @@ def _table_candidate_audit(
     )
     reasons: list[str] = []
     header = data[0] if data else []
-    if data and len(data) > 1 and data[0][0] and "details of ongoing" in str(data[0][0]).lower():
+    if data and len(data) > 1 and data[0][0] and any(t in str(data[0][0]).lower() for t in ("details of ongoing", "detail of ongoing")):
         header = data[1]
     layout_version = None
     layout_version, header_reasons = _classify_table6_header(header)
@@ -381,6 +411,9 @@ def _table_candidate_audit(
     if layout_version is None:
         if established_layout == ANNEXURE_XVIII_LAYOUT and column_count == 6:
             layout_version = ANNEXURE_XVIII_LAYOUT
+            is_legacy_continuation = True
+        elif established_layout == LEGACY_DETAIL_MILESTONES_LAYOUT and column_count == 7:
+            layout_version = LEGACY_DETAIL_MILESTONES_LAYOUT
             is_legacy_continuation = True
         elif established_layout in {
             "legacy-all-ongoing-nine-column-v1",
@@ -395,14 +428,14 @@ def _table_candidate_audit(
     if layout_version is None:
         reasons.extend(header_reasons)
 
-    serial_column = 0 if layout_version == ANNEXURE_XVIII_LAYOUT else (2 if layout_version in LEGACY_LAYOUTS else 0)
+    serial_column = 0 if layout_version in (ANNEXURE_XVIII_LAYOUT, LEGACY_DETAIL_MILESTONES_LAYOUT) else (2 if layout_version in STATE_SECTOR_COLUMN_LAYOUTS else 0)
     if is_legacy_continuation:
         serial_column = 0 if column_count in (6, 7) else (2 if column_count == 9 else 1)
 
     expected_columns = len(TABLE6_LAYOUT_SIGNATURES[layout_version]) if layout_version and not is_legacy_continuation else column_count
     start_row = 0 if is_legacy_continuation else 1
-    if layout_version == ANNEXURE_XVIII_LAYOUT and not is_legacy_continuation:
-        if data and len(data) > 1 and data[0][0] and "details of ongoing" in str(data[0][0]).lower():
+    if layout_version in (ANNEXURE_XVIII_LAYOUT, LEGACY_DETAIL_MILESTONES_LAYOUT) and not is_legacy_continuation:
+        if data and len(data) > 1 and data[0][0] and any(t in str(data[0][0]).lower() for t in ("details of ongoing", "detail of ongoing")):
             start_row = 2
         elif data and len(data) > 0 and data[0][0] and "si.no" in str(data[0][0]).lower():
             start_row = 1
@@ -800,6 +833,77 @@ def _clean_annexure_xviii_row(
     }
 
 
+def _clean_detail_milestones_row(
+    pending: dict[str, Any],
+    month: str,
+    source_file: str,
+) -> dict[str, Any]:
+    cells = pending["cells"]
+    p_cell = cells[1]
+    m = DETAIL_MILESTONES_CODE_RE.search(p_cell)
+    project_code = m.group(1) if m else None
+
+    raw_name = p_cell[:m.start()].strip() if m else p_cell
+    if raw_name.endswith("-"):
+        raw_name = raw_name[:-1].strip()
+    project_name = normalize_space(raw_name)
+
+    agency = None
+    state = None
+    if m:
+        after = p_cell[m.end():].strip()
+        if after.startswith(","):
+            after = after[1:].strip()
+        parts = [normalize_space(x) for x in after.split(",") if normalize_space(x)]
+        agency = parts[0] if len(parts) >= 1 else None
+        state = parts[1] if len(parts) >= 2 else None
+
+    orig_doc, rev_doc, _ = split_legacy_triplet(cells[3])
+    orig_cost, rev_cost, _ = split_legacy_triplet(cells[4])
+
+    exp_lines = [normalize_space(l) for l in (cells[5] or "").splitlines() if normalize_space(l)]
+    exp_val = exp_lines[0] if exp_lines else None
+    if exp_val and (exp_val.startswith("(") or exp_val.startswith("[")):
+        exp_val = None
+    expenditure_raw = None if is_missing(exp_val) else exp_val
+
+    approval_raw = None if is_missing(cells[2]) else normalize_space(cells[2])
+
+    return {
+        "project_code": project_code,
+        "legacy_ocms_code": None,
+        "pmgid": None,
+        "project_name": project_name,
+        "agency": agency,
+        "ministry": None,
+        "sector": pending["sector"],
+        "state": state,
+        "approval_date": parse_legacy_month(approval_raw),
+        "start_date": None,
+        "original_completion_date": parse_legacy_month(orig_doc),
+        "revised_completion_date": parse_legacy_month(rev_doc),
+        "original_cost": parse_number(orig_cost),
+        "revised_cost": parse_number(rev_cost),
+        "cumulative_expenditure": parse_number(expenditure_raw),
+        "physical_progress": None,
+        "report_month": month,
+        "approval_date_raw": approval_raw,
+        "start_date_raw": None,
+        "original_completion_date_raw": orig_doc,
+        "revised_completion_date_raw": rev_doc,
+        "original_cost_raw": orig_cost,
+        "revised_cost_raw": rev_cost,
+        "cumulative_expenditure_raw": expenditure_raw,
+        "physical_progress_raw": None,
+        "source_file": source_file,
+        "source_page": pending["source_page"],
+        "source_pages": pending["source_pages"],
+        "source_row_number": pending["source_row_number"],
+        "source_serial_number": pending["serial"],
+        "extraction_method": EXTRACTION_METHOD,
+    }
+
+
 def _clean_project_row(
     cells: list[str], month: str, source_file: str, source_page: int, raw_row_number: int, ministry: str | None, sector: str | None
 ) -> dict[str, Any]:
@@ -857,11 +961,13 @@ def process_pdf(pdf_path: Path, paths: PipelinePaths) -> dict[str, Any]:
     state = None
     legacy_state_group: list[int] = []
     legacy_sector_group: list[int] = []
+    pending_milestones_record: dict[str, Any] | None = None
 
     with pdfplumber.open(pdf_path) as pdf:
         page_texts = [(index + 1, page.extract_text() or "") for index, page in enumerate(pdf.pages)]
 
         annexure_start = None
+        detail_milestones_start = None
         for p_num, text in page_texts:
             leading_lines = [normalize_space(line).lower() for line in (text or "").splitlines()[:5]]
             semantic_leading_lines = [
@@ -887,7 +993,34 @@ def process_pdf(pdf_path: Path, paths: PipelinePaths) -> dict[str, Any]:
                 annexure_start = p_num
                 break
 
-        if annexure_start is not None:
+            has_details_150 = any(
+                "detail of ongoing projects costing rs 150" in line
+                or "details of ongoing projects costing rs 150" in line
+                for line in semantic_leading_lines
+            )
+            if has_details_150:
+                page = pdf.pages[p_num - 1]
+                if not page.find_tables(TABLE_SETTINGS):
+                    continue
+                _, _, _, audits, _ = _locate_table6_candidate(page, p_num)
+                matching = [audit for audit in audits if audit["matches_table6_signature"]]
+                if matching and matching[0]["layout_version"] == LEGACY_DETAIL_MILESTONES_LAYOUT:
+                    detail_milestones_start = p_num
+                    break
+
+        if detail_milestones_start is not None:
+            table_pages = [detail_milestones_start]
+            for p_num in range(detail_milestones_start + 1, len(pdf.pages) + 1):
+                page = pdf.pages[p_num - 1]
+                tables = page.find_tables(TABLE_SETTINGS)
+                if not tables:
+                    break
+                table_pages.append(p_num)
+                d = tables[0].extract()
+                has_total = any(not (r[0] or "").strip() and (r[1] or "").strip().lower() == "total" for r in d)
+                if has_total:
+                    break
+        elif annexure_start is not None:
             table_pages = [annexure_start]
             for p_num in range(annexure_start + 1, len(pdf.pages) + 1):
                 page = pdf.pages[p_num - 1]
@@ -968,13 +1101,16 @@ def process_pdf(pdf_path: Path, paths: PipelinePaths) -> dict[str, Any]:
             )
             is_legacy_continuation = False
             try:
-                candidate_header = table[1] if (len(table) > 1 and table[0][0] and "details of ongoing" in str(table[0][0]).lower()) else table[0]
+                candidate_header = table[1] if (len(table) > 1 and table[0][0] and any(t in str(table[0][0]).lower() for t in ("details of ongoing", "detail of ongoing"))) else table[0]
                 layout_version = _validate_header(candidate_header)
                 if layout_version in LEGACY_LAYOUTS:
                     legacy_header_established = layout_version
             except SchemaChangeDetected as exc:
                 if legacy_header_established == ANNEXURE_XVIII_LAYOUT and len(table[0]) == 6:
                     layout_version = ANNEXURE_XVIII_LAYOUT
+                    is_legacy_continuation = True
+                elif legacy_header_established == LEGACY_DETAIL_MILESTONES_LAYOUT and len(table[0]) == 7:
+                    layout_version = LEGACY_DETAIL_MILESTONES_LAYOUT
                     is_legacy_continuation = True
                 elif legacy_header_established in {
                     "legacy-all-ongoing-nine-column-v1",
@@ -1006,7 +1142,7 @@ def process_pdf(pdf_path: Path, paths: PipelinePaths) -> dict[str, Any]:
             if is_legacy_continuation:
                 legacy_groups = (
                     _legacy_group_cells(page, selection_pass, selected_table_index, is_continuation=True, col_count=len(table[0]))
-                    if layout_version != ANNEXURE_XVIII_LAYOUT
+                    if layout_version in STATE_SECTOR_COLUMN_LAYOUTS
                     else []
                 )
                 start_row = 0
@@ -1014,16 +1150,16 @@ def process_pdf(pdf_path: Path, paths: PipelinePaths) -> dict[str, Any]:
                 removed_counts["repeated_header"] += 1
                 legacy_groups = (
                     _legacy_group_cells(page, selection_pass, selected_table_index, is_continuation=False, col_count=len(table[0]))
-                    if layout_version in LEGACY_LAYOUTS and layout_version != ANNEXURE_XVIII_LAYOUT
+                    if layout_version in STATE_SECTOR_COLUMN_LAYOUTS
                     else []
                 )
                 start_row = (
                     2
-                    if layout_version == ANNEXURE_XVIII_LAYOUT
+                    if layout_version in (ANNEXURE_XVIII_LAYOUT, LEGACY_DETAIL_MILESTONES_LAYOUT)
                     and table
                     and len(table) > 1
                     and table[0][0]
-                    and "details of ongoing" in str(table[0][0]).lower()
+                    and any(t in str(table[0][0]).lower() for t in ("details of ongoing", "detail of ongoing"))
                     else (
                         1
                         if table
@@ -1036,9 +1172,13 @@ def process_pdf(pdf_path: Path, paths: PipelinePaths) -> dict[str, Any]:
 
             for page_row_number, source_row in enumerate(table[start_row:], start_row):
                 raw_sequence += 1
-                cells = [_normalize_cell(cell) for cell in source_row]
+                if layout_version == LEGACY_DETAIL_MILESTONES_LAYOUT and len(source_row) == 9:
+                    source_cells = [source_row[0], source_row[1], source_row[2], source_row[4], source_row[5], source_row[6], source_row[8]]
+                else:
+                    source_cells = source_row
+                cells = [_normalize_cell(cell) for cell in source_cells]
                 
-                if is_legacy_continuation and layout_version != ANNEXURE_XVIII_LAYOUT:
+                if is_legacy_continuation and layout_version in STATE_SECTOR_COLUMN_LAYOUTS:
                     if len(cells) == 7:
                         cells = ["", ""] + cells
                     elif len(cells) == 8:
@@ -1099,10 +1239,50 @@ def process_pdf(pdf_path: Path, paths: PipelinePaths) -> dict[str, Any]:
                         rejected.append({**raw, "raw_text": " | ".join(cells), "reason": "unclassified_non_project_row"})
                     continue
 
-                serial_column = 2 if layout_version in LEGACY_LAYOUTS else 0
+                if layout_version == LEGACY_DETAIL_MILESTONES_LAYOUT:
+                    serial = normalize_space(cells[0])
+                    populated = sum(bool(cell) for cell in cells)
+                    if serial.isdigit():
+                        if pending_milestones_record:
+                            projects.append(_clean_detail_milestones_row(pending_milestones_record, month, pdf_path.name))
+                        pending_milestones_record = {
+                            "serial": int(serial),
+                            "source_page": page_number,
+                            "source_pages": str(page_number),
+                            "source_row_number": page_row_number,
+                            "sector": sector,
+                            "cells": list(cells),
+                        }
+                    elif not serial and normalize_space(cells[1]).upper() in DETAIL_MILESTONES_SECTORS and not any(cells[i] for i in range(2, len(cells))):
+                        if pending_milestones_record:
+                            projects.append(_clean_detail_milestones_row(pending_milestones_record, month, pdf_path.name))
+                            pending_milestones_record = None
+                        sector = normalize_space(cells[1]).upper()
+                        removed_counts["sector_heading"] += 1
+                    elif not serial and normalize_space(cells[1]).lower() == "total":
+                        if pending_milestones_record:
+                            projects.append(_clean_detail_milestones_row(pending_milestones_record, month, pdf_path.name))
+                            pending_milestones_record = None
+                        removed_counts["total"] += 1
+                    elif not serial and not populated:
+                        rejected.append({**raw, "raw_text": "", "reason": "empty_table_row"})
+                    elif not serial and pending_milestones_record:
+                        for col_i in range(1, min(len(cells), len(pending_milestones_record["cells"]))):
+                            if cells[col_i]:
+                                if pending_milestones_record["cells"][col_i]:
+                                    pending_milestones_record["cells"][col_i] += "\n" + cells[col_i]
+                                else:
+                                    pending_milestones_record["cells"][col_i] = cells[col_i]
+                        if page_number != pending_milestones_record["source_page"]:
+                            pending_milestones_record["source_pages"] = f"{pending_milestones_record['source_page']}-{page_number}"
+                    else:
+                        rejected.append({**raw, "raw_text": " | ".join(cells), "reason": "unclassified_non_project_row"})
+                    continue
+
+                serial_column = 2 if layout_version in STATE_SECTOR_COLUMN_LAYOUTS else 0
                 serial = cells[serial_column]
                 populated = sum(bool(cell) for cell in cells)
-                if serial.isdigit() and layout_version in LEGACY_LAYOUTS:
+                if serial.isdigit() and layout_version in STATE_SECTOR_COLUMN_LAYOUTS:
                     if cells[0]:
                         fragment = normalize_space(cells[0])
                         if state and fragment.casefold().replace(" ", "") in state.casefold().replace(" ", ""):
@@ -1125,7 +1305,7 @@ def process_pdf(pdf_path: Path, paths: PipelinePaths) -> dict[str, Any]:
                     legacy_sector_group.append(project_index)
                 elif serial.isdigit():
                     projects.append(_clean_project_row(cells, month, pdf_path.name, page_number, page_row_number, ministry, sector))
-                elif layout_version in LEGACY_LAYOUTS and (cells[0] or cells[1]) and populated <= 2:
+                elif layout_version in STATE_SECTOR_COLUMN_LAYOUTS and (cells[0] or cells[1]) and populated <= 2:
                     if cells[0]:
                         fragment = normalize_space(cells[0])
                         state = _merge_legacy_group_fragment(state, fragment)
@@ -1138,7 +1318,7 @@ def process_pdf(pdf_path: Path, paths: PipelinePaths) -> dict[str, Any]:
                             projects[index]["sector"] = sector
                 elif not serial and cells[1].lower().startswith("total"):
                     removed_counts["total"] += 1
-                elif layout_version in LEGACY_LAYOUTS and not serial and cells[3].lower().startswith("total"):
+                elif layout_version in STATE_SECTOR_COLUMN_LAYOUTS and not serial and cells[3].lower().startswith("total"):
                     removed_counts["total"] += 1
                 elif not serial and populated == 1 and cells[1]:
                     if cells[1].startswith(("Ministry of ", "Department of ", "Department for ")):
@@ -1151,6 +1331,10 @@ def process_pdf(pdf_path: Path, paths: PipelinePaths) -> dict[str, Any]:
                     rejected.append({**raw, "raw_text": "", "reason": "empty_table_row"})
                 else:
                     rejected.append({**raw, "raw_text": " | ".join(cells), "reason": "unclassified_non_project_row"})
+
+        if pending_milestones_record:
+            projects.append(_clean_detail_milestones_row(pending_milestones_record, month, pdf_path.name))
+            pending_milestones_record = None
 
     _clear_stale_schema_failures(extracted_dir)
     _write_jsonl(extracted_dir / "raw_table6_rows.jsonl", raw_rows)
@@ -1238,7 +1422,15 @@ def process_pdf(pdf_path: Path, paths: PipelinePaths) -> dict[str, Any]:
         "source_file": pdf_path.name,
         "source_path": str(pdf_path.resolve()),
         "report_month": month,
-        "table": "Annexure XVIII: Details of Ongoing Projects" if uncoded_annexure else "All Ongoing Projects (Table 6)",
+        "table": (
+            "Annexure XVIII: Details of Ongoing Projects"
+            if uncoded_annexure
+            else (
+                "Detail of ongoing Projects Costing Rs 150 Crore and above"
+                if layout_versions == {LEGACY_DETAIL_MILESTONES_LAYOUT}
+                else "All Ongoing Projects (Table 6)"
+            )
+        ),
         "extractor": EXTRACTION_METHOD,
         "table_selection_method": TABLE_SELECTION_METHOD,
         "layout_versions": sorted(layout_versions),
@@ -1282,7 +1474,11 @@ def process_pdf(pdf_path: Path, paths: PipelinePaths) -> dict[str, Any]:
         "structurally_absent_fields": (
             ["project_code", "legacy_ocms_code", "pmgid", "ministry", "start_date", "physical_progress"]
             if uncoded_annexure
-            else []
+            else (
+                ["legacy_ocms_code", "pmgid", "ministry", "start_date", "physical_progress"]
+                if layout_versions == {LEGACY_DETAIL_MILESTONES_LAYOUT}
+                else []
+            )
         ),
         "output_csv": str(clean_path.resolve()),
     }

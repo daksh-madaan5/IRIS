@@ -92,11 +92,12 @@ class Generated2024Q2AcceptanceTests(unittest.TestCase):
         self.assertEqual(manifest["missing_project_codes"], 0)
         self.assertEqual(manifest["duplicate_project_codes"], 0)
 
-    def test_combined_starts_in_june_and_excludes_uncoded_months(self):
+    def test_combined_includes_june_and_excludes_uncoded_months(self):
         summary = json.loads(
             (self.root / "data" / "validation" / "combined_summary.json").read_text(encoding="utf-8")
         )
-        self.assertEqual(summary["report_months"][0], "2024-06")
+        self.assertEqual(summary["report_months"][0], "2024-01")
+        self.assertIn("2024-06", summary["report_months"])
         self.assertNotIn("2024-04", summary["report_months"])
         self.assertNotIn("2024-05", summary["report_months"])
         self.assertEqual(summary["rows_by_month"]["2024-06"], 1810)
