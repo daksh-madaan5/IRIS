@@ -90,15 +90,40 @@ LEGACY_ALL_ONGOING_PROGRESS_ONLY_HEADER_SIGNATURE = (
     ("cumulative", "expenditure"),
     ("progress",),
 )
+LEGACY_ANNEXURE_XVIII_HEADER_SIGNATURE = (
+    ("si.no",),
+    ("project",),
+    ("approval",),
+    ("commissioning",),
+    ("cost",),
+    ("expenditure",),
+)
+ANNEXURE_XVIII_LAYOUT = "legacy-annexure-xviii-six-column-v1"
 TABLE6_LAYOUT_SIGNATURES = {
     "table6-eight-column-v1": TABLE6_HEADER_SIGNATURE,
     "table6-eight-column-approval-only-v1": TABLE6_APPROVAL_ONLY_HEADER_SIGNATURE,
     "legacy-all-ongoing-nine-column-v1": LEGACY_ALL_ONGOING_HEADER_SIGNATURE,
     "legacy-all-ongoing-nine-column-progress-only-v1": LEGACY_ALL_ONGOING_PROGRESS_ONLY_HEADER_SIGNATURE,
+    ANNEXURE_XVIII_LAYOUT: LEGACY_ANNEXURE_XVIII_HEADER_SIGNATURE,
 }
 LEGACY_LAYOUTS = {
     "legacy-all-ongoing-nine-column-v1",
     "legacy-all-ongoing-nine-column-progress-only-v1",
+    ANNEXURE_XVIII_LAYOUT,
+}
+ANNEXURE_XVIII_STATES = {
+    "ANDAMAN AND NICOBAR ISLANDS", "ANDHRA PRADESH", "ARUNACHAL PRADESH", "ASSAM", "BIHAR",
+    "CHHATTISGARH", "DELHI", "GOA", "GUJARAT", "HARYANA", "HIMACHAL PRADESH",
+    "JAMMU AND KASHMIR", "JHARKHAND", "KARNATAKA", "KERALA", "LADAKH", "MADHYA PRADESH",
+    "MAHARASHTRA", "MANIPUR", "MEGHALAYA", "MIZORAM", "MULTI STATE", "NAGALAND",
+    "ODISHA", "PUNJAB", "RAJASTHAN", "SIKKIM", "TAMIL NADU", "TELANGANA", "TRIPURA",
+    "UTTAR PRADESH", "UTTARAKHAND", "WEST BENGAL"
+}
+ANNEXURE_XVIII_SECTORS = {
+    "atomic energy", "civil aviation", "coal", "department of higher education", "doner",
+    "dpiit", "finance", "health and family welfare", "home affairs", "mines", "petroleum",
+    "power", "railways", "renewable energy", "road transport and highways", "shipping and ports",
+    "social justice", "steel", "telecommunications", "urban development", "water resources"
 }
 MONTH_NAMES = {
     name.upper(): index
@@ -169,6 +194,10 @@ class PipelinePaths:
     @property
     def cleaned(self) -> Path:
         return self.root / "data" / "cleaned"
+
+    @property
+    def uncoded_cleaned(self) -> Path:
+        return self.root / "data" / "cleaned_uncoded"
 
     @property
     def processed(self) -> Path:
@@ -261,13 +290,22 @@ def _is_table6_page(text: str) -> bool:
         and "north-east" not in first_lines
         and "north east" not in first_lines
     )
-    return current or legacy or legacy_continuation
+    annexure_xviii = "details of ongoing projects" in normalized and any(
+        token in normalized for token in ("annexure xviii", "annexure - xviii", "annexure-xviii")
+    )
+    return current or legacy or legacy_continuation or annexure_xviii
 
 
-def _detect_report_month(text: str, filename: str) -> str:
-    match = re.search(r"\b(" + "|".join(MONTH_NAMES) + r")\s+(20\d{2})\b", text.upper())
+def _detect_report_month(text: str, filename: str, pdf_path: Path | None = None) -> str:
+    month_pattern = "|".join(MONTH_NAMES)
+    match = re.search(r"\b(" + month_pattern + r")\s+(20\d{2})\b", text.upper())
     if not match:
-        match = re.search(r"(" + "|".join(MONTH_NAMES) + r")[_ -]+(20\d{2})", filename.upper())
+        match = re.search(r"(" + month_pattern + r")[_ -]+(20\d{2})", filename.upper())
+    if not match and pdf_path is not None:
+        parent_year_match = re.search(r"\b(20\d{2})\b", str(pdf_path))
+        month_match = re.search(r"(?:^|[^A-Z])(" + month_pattern + r")(?:[^A-Z]|$)", filename.upper()) or re.search(r"\b(" + month_pattern + r")\b", text.upper())
+        if parent_year_match and month_match:
+            return f"{parent_year_match.group(1)}-{MONTH_NAMES[month_match.group(1)]:02d}"
     if not match:
         raise SchemaChangeDetected(f"Could not determine report month for {filename}")
     return f"{match.group(2)}-{MONTH_NAMES[match.group(1)]:02d}"
@@ -316,7 +354,7 @@ def _table_candidate_audit(
     page_number: int,
     page_width: float,
     page_height: float,
-    legacy_header_established: bool = False,
+    legacy_header_established: bool | str = False,
 ) -> tuple[list[list[str | None]], dict[str, Any]]:
     """Assess one detected table against the canonical positional signature."""
     data = table.extract()
@@ -333,22 +371,44 @@ def _table_candidate_audit(
     )
     reasons: list[str] = []
     header = data[0] if data else []
+    if data and len(data) > 1 and data[0][0] and "details of ongoing" in str(data[0][0]).lower():
+        header = data[1]
     layout_version = None
     layout_version, header_reasons = _classify_table6_header(header)
     is_legacy_continuation = False
     
-    if layout_version is None and legacy_header_established and column_count in (7, 8, 9):
-        layout_version = "legacy-all-ongoing-nine-column-v1"
-        is_legacy_continuation = True
-    else:
+    established_layout = legacy_header_established if isinstance(legacy_header_established, str) else None
+    if layout_version is None:
+        if established_layout == ANNEXURE_XVIII_LAYOUT and column_count == 6:
+            layout_version = ANNEXURE_XVIII_LAYOUT
+            is_legacy_continuation = True
+        elif established_layout in {
+            "legacy-all-ongoing-nine-column-v1",
+            "legacy-all-ongoing-nine-column-progress-only-v1",
+        } and column_count in (7, 8, 9):
+            layout_version = established_layout
+            is_legacy_continuation = True
+        elif legacy_header_established is True and column_count in (7, 8, 9):
+            # Backward-compatible test/helper behavior for an established coded legacy header.
+            layout_version = "legacy-all-ongoing-nine-column-v1"
+            is_legacy_continuation = True
+    if layout_version is None:
         reasons.extend(header_reasons)
 
-    serial_column = 2 if layout_version in LEGACY_LAYOUTS else 0
+    serial_column = 0 if layout_version == ANNEXURE_XVIII_LAYOUT else (2 if layout_version in LEGACY_LAYOUTS else 0)
     if is_legacy_continuation:
-        serial_column = 2 if column_count == 9 else (0 if column_count == 7 else 1)
-        
+        serial_column = 0 if column_count in (6, 7) else (2 if column_count == 9 else 1)
+
     expected_columns = len(TABLE6_LAYOUT_SIGNATURES[layout_version]) if layout_version and not is_legacy_continuation else column_count
     start_row = 0 if is_legacy_continuation else 1
+    if layout_version == ANNEXURE_XVIII_LAYOUT and not is_legacy_continuation:
+        if data and len(data) > 1 and data[0][0] and "details of ongoing" in str(data[0][0]).lower():
+            start_row = 2
+        elif data and len(data) > 0 and data[0][0] and "si.no" in str(data[0][0]).lower():
+            start_row = 1
+        else:
+            start_row = 0
+
     project_rows = sum(
         bool(row) and len(row) == expected_columns and normalize_space(row[serial_column]).isdigit()
         for row in data[start_row:]
@@ -373,7 +433,7 @@ def _table_candidate_audit(
 
 
 def _select_table6_candidate(
-    tables: list[Any], page_number: int, page_width: float, page_height: float, legacy_header_established: bool = False
+    tables: list[Any], page_number: int, page_width: float, page_height: float, legacy_header_established: bool | str = False
 ) -> tuple[list[list[str | None]], int, list[dict[str, Any]]]:
     """Select exactly one semantic Table 6 candidate or fail closed."""
     extracted: list[list[list[str | None]]] = []
@@ -394,7 +454,7 @@ def _select_table6_candidate(
 
 
 def _locate_table6_candidate(
-    page: Any, page_number: int, legacy_header_established: bool = False
+    page: Any, page_number: int, legacy_header_established: bool | str = False
 ) -> tuple[list[list[str | None]], int, str, list[dict[str, Any]], list[list[list[str | None]]]]:
     """Find the canonical table, retrying inside the page frame only after zero full-page matches."""
     full_tables = page.find_tables(TABLE_SETTINGS)
@@ -550,6 +610,94 @@ def _merge_legacy_group_fragment(current: str | None, fragment: str) -> str:
     return f"{current} {fragment}"
 
 
+def _repair_legacy_project_code_bleed(
+    table: list[list[str | None]], page_text: str
+) -> list[dict[str, Any]]:
+    """Repair only evidenced one-row code displacement in coded legacy tables.
+
+    A leading code is moved to the preceding serial row only when the serials
+    are adjacent, the preceding row has no code, and the current row either
+    contains another code or is followed by another leading-code row. A final
+    missing code is restored only when the page text contains exactly one code
+    not already assigned anywhere in the table. These constraints prevent a
+    valid current-row code from being borrowed merely because its predecessor
+    is malformed.
+    """
+    if not table:
+        return []
+    column_count = len(table[0])
+    project_column = 3 if column_count == 9 else (2 if column_count == 8 else 1)
+    serial_column = 2 if column_count == 9 else (1 if column_count == 8 else 0)
+    code_pattern = re.compile(r"^\((N\d{8}|\d{9})\)$")
+
+    def lines(row: list[str | None]) -> list[str]:
+        value = row[project_column] if len(row) > project_column else ""
+        return [line.strip() for line in (value or "").splitlines() if line.strip()]
+
+    def serial(row: list[str | None]) -> int | None:
+        value = normalize_space(row[serial_column] if len(row) > serial_column else "")
+        return int(value) if value.isdigit() else None
+
+    repairs: list[dict[str, Any]] = []
+    for index in range(1, len(table)):
+        current_lines = lines(table[index])
+        if not current_lines or not code_pattern.fullmatch(current_lines[0]):
+            continue
+        previous_lines = lines(table[index - 1])
+        current_serial = serial(table[index])
+        previous_serial = serial(table[index - 1])
+        adjacent_serials = (
+            current_serial is not None
+            and previous_serial is not None
+            and current_serial == previous_serial + 1
+        )
+        previous_missing_code = not any(code_pattern.fullmatch(line) for line in previous_lines)
+        current_has_own_code = any(code_pattern.fullmatch(line) for line in current_lines[1:])
+        next_leads_with_code = index + 1 < len(table) and bool(lines(table[index + 1])) and bool(
+            code_pattern.fullmatch(lines(table[index + 1])[0])
+        )
+        if not (adjacent_serials and previous_missing_code and (current_has_own_code or next_leads_with_code)):
+            continue
+        displaced_code = current_lines[0]
+        table[index - 1][project_column] = "\n".join([*(previous_lines or []), displaced_code])
+        table[index][project_column] = "\n".join(current_lines[1:])
+        repairs.append(
+            {
+                "type": "legacy_project_code_bleed_repaired",
+                "method": "adjacent_serial_and_code_chain",
+                "from_serial": current_serial,
+                "to_serial": previous_serial,
+                "project_code": displaced_code[1:-1],
+            }
+        )
+
+    numeric_rows = [row for row in table if serial(row) is not None]
+    if numeric_rows:
+        last_row = numeric_rows[-1]
+        last_lines = lines(last_row)
+        if not any(code_pattern.fullmatch(line) for line in last_lines):
+            assigned = Counter(
+                line
+                for row in table
+                for line in lines(row)
+                if code_pattern.fullmatch(line)
+            )
+            reported = Counter(re.findall(r"\(N\d{8}\)|\(\d{9}\)", page_text or ""))
+            unassigned = list((reported - assigned).elements())
+            if len(unassigned) == 1 and re.findall(r"\(N\d{8}\)|\(\d{9}\)", page_text or "")[-1:] == unassigned:
+                restored_code = unassigned[0]
+                last_row[project_column] = "\n".join([*last_lines, restored_code])
+                repairs.append(
+                    {
+                        "type": "legacy_project_code_bleed_repaired",
+                        "method": "unique_unassigned_final_page_code",
+                        "to_serial": serial(last_row),
+                        "project_code": restored_code[1:-1],
+                    }
+                )
+    return repairs
+
+
 def _clean_legacy_project_row(
     cells: list[str], month: str, source_file: str, source_page: int, raw_row_number: int,
     state: str | None, sector: str | None,
@@ -594,6 +742,60 @@ def _clean_legacy_project_row(
         "source_pages": str(source_page),
         "source_row_number": raw_row_number,
         "source_serial_number": int(cells[2]),
+        "extraction_method": EXTRACTION_METHOD,
+    }
+
+
+def _clean_annexure_xviii_row(
+    cells: list[str], month: str, source_file: str, source_page: int, raw_row_number: int,
+    state: str | None, sector: str | None,
+) -> dict[str, Any]:
+    original_doc_raw, revised_doc_raw, _anticipated_doc_raw = split_legacy_triplet(cells[3])
+    original_cost_raw, revised_cost_raw, _anticipated_cost_raw = split_legacy_triplet(cells[4])
+    approval_value = normalize_space(cells[2])
+    approval_raw = None if is_missing(approval_value) else approval_value
+
+    exp_lines = [normalize_space(l) for l in (cells[5] or "").splitlines() if normalize_space(l)]
+    exp_val = exp_lines[0] if exp_lines else None
+    if exp_val and (exp_val.startswith("(") or exp_val.startswith("[")):
+        exp_val = None
+    expenditure_raw = None if is_missing(exp_val) else exp_val
+
+    proj_text = cells[1]
+
+    return {
+        "project_code": None,
+        "legacy_ocms_code": None,
+        "pmgid": None,
+        "project_name": proj_text,
+        # Annexure XVIII has no agency column. Parenthetical text is part of
+        # the source project name and must not be reinterpreted as an agency.
+        "agency": None,
+        "ministry": None,
+        "sector": sector,
+        "state": state,
+        "approval_date": parse_legacy_month(approval_raw),
+        "start_date": None,
+        "original_completion_date": parse_legacy_month(original_doc_raw),
+        "revised_completion_date": parse_legacy_month(revised_doc_raw),
+        "original_cost": parse_number(original_cost_raw),
+        "revised_cost": parse_number(revised_cost_raw),
+        "cumulative_expenditure": parse_number(expenditure_raw),
+        "physical_progress": None,
+        "report_month": month,
+        "approval_date_raw": approval_raw,
+        "start_date_raw": None,
+        "original_completion_date_raw": original_doc_raw,
+        "revised_completion_date_raw": revised_doc_raw,
+        "original_cost_raw": original_cost_raw,
+        "revised_cost_raw": revised_cost_raw,
+        "cumulative_expenditure_raw": expenditure_raw,
+        "physical_progress_raw": None,
+        "source_file": source_file,
+        "source_page": source_page,
+        "source_pages": str(source_page),
+        "source_row_number": raw_row_number,
+        "source_serial_number": int(cells[0]),
         "extraction_method": EXTRACTION_METHOD,
     }
 
@@ -658,18 +860,55 @@ def process_pdf(pdf_path: Path, paths: PipelinePaths) -> dict[str, Any]:
 
     with pdfplumber.open(pdf_path) as pdf:
         page_texts = [(index + 1, page.extract_text() or "") for index, page in enumerate(pdf.pages)]
-        table_pages = [number for number, text in page_texts if _is_table6_page(text)]
+
+        annexure_start = None
+        for p_num, text in page_texts:
+            leading_lines = [normalize_space(line).lower() for line in (text or "").splitlines()[:5]]
+            semantic_leading_lines = [
+                normalize_space(re.sub(r"[^a-z0-9]+", " ", line)) for line in leading_lines
+            ]
+            has_annexure_label = "annexure xviii" in semantic_leading_lines
+            has_details_heading = any(
+                heading in semantic_leading_lines
+                for heading in ("details of on going projects", "details of ongoing projects")
+            )
+            if has_annexure_label and has_details_heading:
+                page = pdf.pages[p_num - 1]
+                if not page.find_tables(TABLE_SETTINGS):
+                    # A contents page can name the annexure without containing
+                    # its project grid; it is not a candidate table page.
+                    continue
+                _, _, _, audits, _ = _locate_table6_candidate(page, p_num)
+                matching = [audit for audit in audits if audit["matches_table6_signature"]]
+                if matching[0]["layout_version"] != ANNEXURE_XVIII_LAYOUT:
+                    raise SchemaChangeDetected(
+                        f"Page {p_num}: Annexure XVIII heading did not match its six-column schema"
+                    )
+                annexure_start = p_num
+                break
+
+        if annexure_start is not None:
+            table_pages = [annexure_start]
+            for p_num in range(annexure_start + 1, len(pdf.pages) + 1):
+                page = pdf.pages[p_num - 1]
+                if page.find_tables(TABLE_SETTINGS):
+                    table_pages.append(p_num)
+                else:
+                    break
+        else:
+            table_pages = [number for number, text in page_texts if _is_table6_page(text)]
+
         if not table_pages:
             raise SchemaChangeDetected(f"Table 6 not detected in {pdf_path.name}")
         if table_pages != list(range(table_pages[0], table_pages[-1] + 1)):
             schema_events.append({"type": "noncontiguous_table_pages", "pages": table_pages})
-        month = _detect_report_month(dict(page_texts)[table_pages[0]], pdf_path.name)
+        month = _detect_report_month(dict(page_texts)[table_pages[0]], pdf_path.name, pdf_path=pdf_path)
         extracted_dir = paths.extracted(month)
         LOGGER.info("Detected report month: %s", month)
         LOGGER.info("Detected Table 6 pages: %s-%s", table_pages[0], table_pages[-1])
 
         raw_sequence = 0
-        legacy_header_established = False
+        legacy_header_established: bool | str = False
         for page_number in table_pages:
             page = pdf.pages[page_number - 1]
             try:
@@ -729,12 +968,19 @@ def process_pdf(pdf_path: Path, paths: PipelinePaths) -> dict[str, Any]:
             )
             is_legacy_continuation = False
             try:
-                layout_version = _validate_header(table[0])
+                candidate_header = table[1] if (len(table) > 1 and table[0][0] and "details of ongoing" in str(table[0][0]).lower()) else table[0]
+                layout_version = _validate_header(candidate_header)
                 if layout_version in LEGACY_LAYOUTS:
-                    legacy_header_established = True
+                    legacy_header_established = layout_version
             except SchemaChangeDetected as exc:
-                if legacy_header_established and len(table[0]) in (7, 8, 9):
-                    layout_version = "legacy-all-ongoing-nine-column-v1"
+                if legacy_header_established == ANNEXURE_XVIII_LAYOUT and len(table[0]) == 6:
+                    layout_version = ANNEXURE_XVIII_LAYOUT
+                    is_legacy_continuation = True
+                elif legacy_header_established in {
+                    "legacy-all-ongoing-nine-column-v1",
+                    "legacy-all-ongoing-nine-column-progress-only-v1",
+                } and len(table[0]) in (7, 8, 9):
+                    layout_version = str(legacy_header_established)
                     is_legacy_continuation = True
                 else:
                     _write_schema_failure(
@@ -752,23 +998,47 @@ def process_pdf(pdf_path: Path, paths: PipelinePaths) -> dict[str, Any]:
             layout_versions.add(layout_version)
             raw_pages[-1]["layout_version"] = layout_version
             
+            if layout_version in ("legacy-all-ongoing-nine-column-v1", "legacy-all-ongoing-nine-column-progress-only-v1"):
+                repairs = _repair_legacy_project_code_bleed(table, dict(page_texts)[page_number])
+                raw_pages[-1]["project_code_bleed_repairs"] = repairs
+                schema_events.extend({"source_page": page_number, **repair} for repair in repairs)
+
             if is_legacy_continuation:
-                legacy_groups = _legacy_group_cells(page, selection_pass, selected_table_index, is_continuation=True, col_count=len(table[0]))
+                legacy_groups = (
+                    _legacy_group_cells(page, selection_pass, selected_table_index, is_continuation=True, col_count=len(table[0]))
+                    if layout_version != ANNEXURE_XVIII_LAYOUT
+                    else []
+                )
                 start_row = 0
             else:
                 removed_counts["repeated_header"] += 1
                 legacy_groups = (
                     _legacy_group_cells(page, selection_pass, selected_table_index, is_continuation=False, col_count=len(table[0]))
-                    if layout_version in LEGACY_LAYOUTS
+                    if layout_version in LEGACY_LAYOUTS and layout_version != ANNEXURE_XVIII_LAYOUT
                     else []
                 )
-                start_row = 1
+                start_row = (
+                    2
+                    if layout_version == ANNEXURE_XVIII_LAYOUT
+                    and table
+                    and len(table) > 1
+                    and table[0][0]
+                    and "details of ongoing" in str(table[0][0]).lower()
+                    else (
+                        1
+                        if table
+                        and len(table) > 0
+                        and table[0][0]
+                        and ("si.no" in str(table[0][0]).lower() or "sl no" in str(table[0][0]).lower() or "sl.no" in str(table[0][0]).lower())
+                        else 0
+                    )
+                )
 
             for page_row_number, source_row in enumerate(table[start_row:], start_row):
                 raw_sequence += 1
                 cells = [_normalize_cell(cell) for cell in source_row]
                 
-                if is_legacy_continuation:
+                if is_legacy_continuation and layout_version != ANNEXURE_XVIII_LAYOUT:
                     if len(cells) == 7:
                         cells = ["", ""] + cells
                     elif len(cells) == 8:
@@ -789,6 +1059,45 @@ def process_pdf(pdf_path: Path, paths: PipelinePaths) -> dict[str, Any]:
                     "cells": cells,
                 }
                 raw_rows.append(raw)
+
+                if layout_version == ANNEXURE_XVIII_LAYOUT:
+                    serial = normalize_space(cells[0])
+                    populated = sum(bool(cell) for cell in cells)
+                    if serial.isdigit():
+                        projects.append(
+                            _clean_annexure_xviii_row(
+                                cells, month, pdf_path.name, page_number, page_row_number, state, sector
+                            )
+                        )
+                    elif re.fullmatch(r"\d+(?:\s+\d+)+", serial):
+                        rejected.append(
+                            {
+                                **raw,
+                                "raw_text": " | ".join(cells),
+                                "reason": "multiple_source_projects_merged_in_one_detected_row",
+                            }
+                        )
+                    elif re.match(r"^\d+\s+\S", serial) and not cells[1]:
+                        rejected.append(
+                            {**raw, "raw_text": " | ".join(cells), "reason": "serial_project_cell_bleed"}
+                        )
+                    elif not serial and cells[1]:
+                        if cells[1].upper() in ANNEXURE_XVIII_STATES:
+                            state = cells[1].upper()
+                        elif cells[1].lower() in ANNEXURE_XVIII_SECTORS:
+                            sector = cells[1]
+                        elif "total" in cells[1].lower() or "si.no" in cells[1].lower() or "details of ongoing" in cells[1].lower():
+                            removed_counts["total"] += 1
+                        else:
+                            if projects:
+                                projects[-1]["project_name"] = f"{projects[-1]['project_name']} {cells[1]}"
+                    elif not serial and not cells[1] and cells[2] and cells[3] and cells[4] and cells[5]:
+                        rejected.append({**raw, "raw_text": " | ".join(cells), "reason": "source_omitted_serial_project_row"})
+                    elif not serial and not populated:
+                        rejected.append({**raw, "raw_text": "", "reason": "empty_table_row"})
+                    else:
+                        rejected.append({**raw, "raw_text": " | ".join(cells), "reason": "unclassified_non_project_row"})
+                    continue
 
                 serial_column = 2 if layout_version in LEGACY_LAYOUTS else 0
                 serial = cells[serial_column]
@@ -846,12 +1155,15 @@ def process_pdf(pdf_path: Path, paths: PipelinePaths) -> dict[str, Any]:
     _clear_stale_schema_failures(extracted_dir)
     _write_jsonl(extracted_dir / "raw_table6_rows.jsonl", raw_rows)
     _write_jsonl(extracted_dir / "raw_table6_pages.jsonl", raw_pages)
-    warnings, duplicates, validation_metrics = validate_records(projects)
+    uncoded_annexure = layout_versions == {ANNEXURE_XVIII_LAYOUT}
+    warnings, duplicates, validation_metrics = validate_records(
+        projects, project_code_structurally_absent=uncoded_annexure
+    )
     qc_rows = build_quality_control_rows(projects, warnings)
 
     # Identifier/serial failures are retained for review, never silently dropped.
     for record in projects:
-        if not record["project_code"]:
+        if not record["project_code"] and not uncoded_annexure:
             rejected.append(
                 {
                     "raw_text": record["project_name"],
@@ -863,8 +1175,14 @@ def process_pdf(pdf_path: Path, paths: PipelinePaths) -> dict[str, Any]:
             )
 
     month_token = month.replace("-", "_")
-    clean_path = paths.cleaned / f"projects_{month_token}.csv"
+    clean_path = (
+        paths.uncoded_cleaned if uncoded_annexure else paths.cleaned
+    ) / f"projects_{month_token}.csv"
     _write_csv(clean_path, projects, CLEAN_FIELDS)
+    if uncoded_annexure:
+        stale_canonical_path = paths.cleaned / f"projects_{month_token}.csv"
+        if stale_canonical_path.exists() and stale_canonical_path.resolve() != clean_path.resolve():
+            stale_canonical_path.unlink()
     warning_fields = [
         "project_code",
         "report_month",
@@ -920,7 +1238,7 @@ def process_pdf(pdf_path: Path, paths: PipelinePaths) -> dict[str, Any]:
         "source_file": pdf_path.name,
         "source_path": str(pdf_path.resolve()),
         "report_month": month,
-        "table": "All Ongoing Projects (Table 6)",
+        "table": "Annexure XVIII: Details of Ongoing Projects" if uncoded_annexure else "All Ongoing Projects (Table 6)",
         "extractor": EXTRACTION_METHOD,
         "table_selection_method": TABLE_SELECTION_METHOD,
         "layout_versions": sorted(layout_versions),
@@ -936,6 +1254,7 @@ def process_pdf(pdf_path: Path, paths: PipelinePaths) -> dict[str, Any]:
         "warning_count": validation_metrics["warning_count"],
         "rejected_rows": len(rejected),
         "missing_project_codes": validation_metrics["missing_project_codes"],
+        "structurally_missing_project_codes": validation_metrics["structurally_missing_project_codes"],
         "duplicate_project_codes": validation_metrics["duplicate_project_codes"],
         "duplicate_rows": validation_metrics["duplicate_rows"],
         "removed_nonproject_rows": removed_counts,
@@ -954,6 +1273,17 @@ def process_pdf(pdf_path: Path, paths: PipelinePaths) -> dict[str, Any]:
             "derived_values_in_ml_dataset": False,
         },
         "schema_events": schema_events,
+        "canonical_integration_eligible": not uncoded_annexure,
+        "canonical_exclusion_reason": (
+            "Source layout has no project identifier; no surrogate identity may be created"
+            if uncoded_annexure
+            else None
+        ),
+        "structurally_absent_fields": (
+            ["project_code", "legacy_ocms_code", "pmgid", "ministry", "start_date", "physical_progress"]
+            if uncoded_annexure
+            else []
+        ),
         "output_csv": str(clean_path.resolve()),
     }
     _write_json(paths.validation / f"manifest_{month_token}.json", manifest)
@@ -971,6 +1301,7 @@ Rejected rows: {len(rejected)}
 Warning rows: {validation_metrics['warning_rows']}
 
 Missing project codes: {validation_metrics['missing_project_codes']}
+Structurally missing project codes: {validation_metrics['structurally_missing_project_codes']}
 Duplicate project codes: {validation_metrics['duplicate_project_codes']}
 Serial gaps: {serial_gaps}
 Serial duplicates: {serial_duplicates}
@@ -985,6 +1316,7 @@ Warnings by rule: {json.dumps(validation_metrics['warnings_by_rule'], sort_keys=
 Warnings by severity: {json.dumps(validation_metrics['warnings_by_severity'], sort_keys=True)}
 Warnings by priority: {json.dumps(validation_metrics['warnings_by_priority'], sort_keys=True)}
 Schema events: {json.dumps(schema_events, sort_keys=True)}
+Canonical integration eligible: {not uncoded_annexure}
 """
     quality_path = paths.validation / f"quality_{month_token}.txt"
     quality_path.parent.mkdir(parents=True, exist_ok=True)

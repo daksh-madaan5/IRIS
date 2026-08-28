@@ -44,6 +44,18 @@ def record(**overrides):
 
 
 class ValidationTests(unittest.TestCase):
+    def test_structurally_absent_project_code_is_counted_without_error_warning(self):
+        from src.validation.core import validate_records
+
+        sample = record(project_code=None)
+        warnings, duplicates, metrics = validate_records(
+            [sample], project_code_structurally_absent=True
+        )
+        self.assertNotIn("missing_project_code", {warning["rule"] for warning in warnings})
+        self.assertEqual(duplicates, [])
+        self.assertEqual(metrics["missing_project_codes"], 1)
+        self.assertEqual(metrics["structurally_missing_project_codes"], 1)
+
     @staticmethod
     def rules(row):
         warnings, _, _ = validate_records([row])

@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
-MISSING_TOKENS = {"", "-", "(-)", "na", "n/a", "n.a.", "nil", "none"}
+MISSING_TOKENS = {"", "-", "/", "(-)", "na", "n/a", "n.a.", "nil", "none"}
 MONTH_RE = re.compile(r"^(0[1-9]|1[0-2])/(19|20)\d{2}$")
 LEGACY_MONTH_NAME = {
     name.lower(): index
@@ -75,14 +75,14 @@ def parse_legacy_month(value: str | None) -> str | None:
 
 
 def split_legacy_triplet(value: str | None) -> tuple[str | None, str | None, str | None]:
-    """Split original, parenthesized revised, and braced anticipated source values."""
+    """Split original, parenthesized revised, and braced/bracketed anticipated source values."""
     lines = [normalize_space(x) for x in (value or "").splitlines() if normalize_space(x)]
     original = revised = anticipated = None
     for line in lines:
         if line.startswith("(") and line.endswith(")"):
             candidate = line[1:-1].strip()
             revised = None if is_missing(candidate) else candidate
-        elif line.startswith("{") and line.endswith("}"):
+        elif (line.startswith("{") and line.endswith("}")) or (line.startswith("[") and line.endswith("]")):
             candidate = line[1:-1].strip()
             anticipated = None if is_missing(candidate) else candidate
         elif original is None:

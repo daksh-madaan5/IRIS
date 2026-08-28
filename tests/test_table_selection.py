@@ -4,8 +4,11 @@ from pathlib import Path
 import pdfplumber
 
 from src.extraction.pipeline import (
+    ANNEXURE_XVIII_LAYOUT,
     TableCandidateSelectionError,
+    _detect_report_month,
     _locate_table6_candidate,
+    _repair_legacy_project_code_bleed,
     _select_table6_candidate,
 )
 
@@ -101,6 +104,67 @@ class TableSelectionRegressionTests(unittest.TestCase):
         self.assertEqual(len(selected[0]), 9)
         self.assertNotIn("Physical", selected[0][8])
         self.assertTrue(any(row[2] and row[2].isdigit() for row in selected[1:]))
+
+    def test_april_and_may_2024_annexure_xviii_select_by_own_signature(self):
+        cases = (
+            ("data/raw/2024/April_Part-II_List_of_tables.pdf", 462),
+            ("data/raw/2024/May_Part-2.pdf", 462),
+        )
+        for relative_path, page_number in cases:
+            with self.subTest(relative_path=relative_path):
+                with pdfplumber.open(self.root / relative_path) as pdf:
+                    selected, _, _, audits, _ = _locate_table6_candidate(pdf.pages[page_number - 1], page_number)
+                matching = [audit for audit in audits if audit["matches_table6_signature"]]
+                self.assertEqual(len(matching), 1)
+                self.assertEqual(matching[0]["layout_version"], ANNEXURE_XVIII_LAYOUT)
+                header_index = 1 if "Details of Ongoing Projects" in (selected[0][0] or "") else 0
+                self.assertEqual(len(selected[header_index]), 6)
+                self.assertIn("SI.No", selected[header_index][0])
+
+    def test_annexure_continuation_requires_annexure_header_context(self):
+        with pdfplumber.open(self.root / "data/raw/2024/May_Part-2.pdf") as pdf:
+            page = pdf.pages[471]
+            with self.assertRaisesRegex(TableCandidateSelectionError, "found 0"):
+                _locate_table6_candidate(page, 472)
+            selected, _, _, audits, _ = _locate_table6_candidate(page, 472, ANNEXURE_XVIII_LAYOUT)
+        matching = [audit for audit in audits if audit["matches_table6_signature"]]
+        self.assertEqual(len(matching), 1)
+        self.assertEqual(matching[0]["layout_version"], ANNEXURE_XVIII_LAYOUT)
+        self.assertEqual(len(selected[0]), 6)
+
+    def test_month_fallback_uses_scoped_parent_year_for_part_file(self):
+        path = self.root / "data/raw/2024/May_Part-2.pdf"
+        self.assertEqual(_detect_report_month("Annexure XVIII", path.name, path), "2024-05")
+
+    def test_legacy_code_bleed_repair_requires_independent_shift_evidence(self):
+        unsafe = [
+            ["", "", "1", "PROJECT ONE\n(AAI)", "", "", "", "", ""],
+            ["", "", "2", "(N04000073)\nPROJECT TWO\n(AAI)", "", "", "", "", ""],
+        ]
+        self.assertEqual(_repair_legacy_project_code_bleed(unsafe, "(N04000073)"), [])
+        self.assertNotIn("N04000073", unsafe[0][3])
+
+        shifted = [
+            ["", "", "1", "PROJECT ONE\n(AAI)", "", "", "", "", ""],
+            ["", "", "2", "(N04000073)\nPROJECT TWO\n(AAI)\n(N04000074)", "", "", "", "", ""],
+        ]
+        repairs = _repair_legacy_project_code_bleed(shifted, "(N04000073) (N04000074)")
+        self.assertEqual(len(repairs), 1)
+        self.assertIn("(N04000073)", shifted[0][3])
+        self.assertNotIn("(N04000073)", shifted[1][3])
+        self.assertIn("(N04000074)", shifted[1][3])
+
+    def test_unique_unassigned_final_code_is_required_for_last_row_repair(self):
+        table = [["", "", "1", "PROJECT ONE\n(AAI)", "", "", "", "", ""]]
+        repairs = _repair_legacy_project_code_bleed(table, "PROJECT ONE (N04000073)")
+        self.assertEqual(repairs[0]["method"], "unique_unassigned_final_page_code")
+        self.assertIn("(N04000073)", table[0][3])
+
+        ambiguous = [["", "", "1", "PROJECT ONE\n(AAI)", "", "", "", "", ""]]
+        self.assertEqual(
+            _repair_legacy_project_code_bleed(ambiguous, "(N04000073) (N04000074)"),
+            [],
+        )
 
     def test_page_frame_exclusion_recovers_merged_grid_pages(self):
         cases = (

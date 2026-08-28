@@ -13,6 +13,7 @@ Read `docs/HANDOFF.md` before starting historical work. It records the exact acc
 - `data/raw/`: source PDFs. Immutable input; ignored by Git.
 - `data/extracted/YYYY-MM/`: raw/intermediate page and row JSONL, table-selection audits, and fail-closed schema artifacts. Generated and ignored by Git.
 - `data/cleaned/projects_YYYY_MM.csv`: accepted monthly source-faithful project records. Generated and ignored by Git.
+- `data/cleaned_uncoded/projects_YYYY_MM.csv`: accepted source-faithful records from layouts that structurally omit project identity. These retain canonical columns but are deliberately excluded from `projects_monthly.csv`; never create a surrogate key to move them into `data/cleaned/`.
 - `data/processed/projects_monthly.csv`: explicitly rebuilt multi-month canonical dataset. Generated and ignored by Git.
 - `data/validation/`: manifests, warnings, rejected rows, duplicates, QC-only metrics, longitudinal summaries, diagnostics, and the June-July 2025 crosswalk investigation. Generated and ignored by Git.
 - `schemas/project_month.schema.json`: documented record schema. See the legacy-ID caveat below.
@@ -39,7 +40,7 @@ The cleaned/combined column order is defined by `CLEAN_FIELDS` in `src/extractio
 
 Dates printed as `MM/YYYY` are represented as `YYYY-MM`; no day is invented. Numeric canonical fields are parsed values, while the corresponding `*_raw` fields preserve the reported representation. Units for cost and expenditure are Rs crore; physical progress is a percentage and is not clamped.
 
-`schemas/project_month.schema.json` currently constrains `project_code` to six digits, but production validation deliberately also accepts the source-reported legacy formats `N########` and nine-digit numeric identifiers used in April-June 2025. This schema file predates the legacy adapter. Do **not** rewrite legacy codes to satisfy its six-digit regex. If strict JSON-schema enforcement is introduced, update the schema and tests to describe all accepted source formats without changing data.
+`schemas/project_month.schema.json` currently constrains `project_code` to six digits, but production validation deliberately also accepts the source-reported legacy formats `N########` and nine-digit numeric identifiers used from June 2024 through June 2025. This schema file predates the legacy adapter. Do **not** rewrite legacy codes to satisfy its six-digit regex. If strict JSON-schema enforcement is introduced, update the schema and tests to describe all accepted source formats without changing data.
 
 ## Source-faithful data rules
 
@@ -78,7 +79,8 @@ Never automatically integrate the proposed crosswalk, create `stable_project_id`
 
 ## Supported layout adapters
 
-- `legacy-all-ongoing-nine-column-v1`: October and December 2024 plus January through June 2025. The reports call the project list Table 7. Columns include separate State and Sector, but no Ministry or Start Date. Project codes are legacy formats. Original/revised/anticipated triplets require legacy parsing. January and March 2025 have character-spaced embedded date text and use `Mon-YY`; parser compaction must not alter `*_raw` values.
+- `legacy-annexure-xviii-six-column-v1`: April and May 2024 only. This is `Annexure XVIII: Details of On-going Projects`, not Table 6/7. It contains serial, project, approval, completion triplet, cost triplet, and expenditure triplet columns, while structurally omitting project code, agency, ministry, Start Date, and physical progress. Output must remain under `data/cleaned_uncoded/` and is not eligible for canonical integration.
+- `legacy-all-ongoing-nine-column-v1`: June through October 2024, December 2024, and January through June 2025. The reports call the project list Table 7. Columns include separate State and Sector, but no Ministry or Start Date. Project codes are legacy formats. Original/revised/anticipated triplets require legacy parsing. January and March 2025 have character-spaced embedded date text and use `Mon-YY`; parser compaction must not alter `*_raw` values.
 - `legacy-all-ongoing-nine-column-progress-only-v1`: November 2024 only. It has the same verified legacy nine-column semantics, but the final header is printed `Progress (%)` rather than `Physical Progress (%)`. Keep this distinct signature narrow; do not accept arbitrary progress-only tables without the full positional legacy header match.
 - `table6-eight-column-approval-only-v1`: July 2025 only. This verified Table 6 variant has Date of Approval without Start Date; keep `start_date` empty.
 - `table6-eight-column-v1`: August 2025 through July 2026. The standard eight-column Table 6 structure includes approval/start, original/revised completion, original/revised cost, expenditure, and progress semantics.
@@ -89,7 +91,7 @@ Do not broaden an adapter merely because a new report is similar. A new source s
 
 The required flow is:
 
-`source PDF -> raw/intermediate JSONL -> cleaned monthly CSV -> explicit combined rebuild -> validation/longitudinal artifacts`
+`source PDF -> raw/intermediate JSONL -> cleaned monthly CSV (coded or explicitly uncoded) -> explicit coded combined rebuild -> validation/longitudinal artifacts`
 
 Raw extraction must precede cleaning and must be preserved. Every cleaned record requires `source_file`, physical `source_page`, `source_pages` where a logical record spans pages, `source_row_number`, printed `source_serial_number`, and versioned `extraction_method`. Manifests must record pages processed, Table start/end pages, layout version, selector method, parse rates, serial gaps/duplicates, warnings, rejected rows, duplicates, schema events, and output paths.
 
@@ -161,7 +163,7 @@ Do not point that CLI at a single new PDF if the accepted multi-month `projects_
 Explicit accepted-range rebuild command:
 
 ```powershell
-python -m src.build_dataset.monthly --months 2024-10 2024-11 2024-12 2025-01 2025-02 2025-03 2025-04 2025-05 2025-06 2025-07 2025-08 2025-09 2025-10 2025-11 2025-12 2026-01 2026-02 2026-03 2026-04 2026-05 2026-06 2026-07
+python -m src.build_dataset.monthly --months 2024-06 2024-07 2024-08 2024-09 2024-10 2024-11 2024-12 2025-01 2025-02 2025-03 2025-04 2025-05 2025-06 2025-07 2025-08 2025-09 2025-10 2025-11 2025-12 2026-01 2026-02 2026-03 2026-04 2026-05 2026-06 2026-07
 ```
 
 Reproduce the diagnostic June-July crosswalk outputs only when identity diagnostics are explicitly requested:
@@ -186,6 +188,7 @@ Get-FileHash data/cleaned/projects_*.csv -Algorithm SHA256
 5. If a new structure is real, add the narrowest adapter and header signature. Document absent fields and source conventions; never infer them.
 6. Add selector/parser regression coverage using the actual new layout while retaining all older layout tests.
 7. Process only the new PDF through `process_pdf` until its monthly output passes.
+   If its source layout has no defensible project identifier, route it to `data/cleaned_uncoded/`, record structural absence and canonical ineligibility in the manifest, and do not include that month in the coded combined rebuild.
 8. Verify serial continuity, identifiers, duplicates, rejected reasons, date/numeric parse rates, cross-field warnings, provenance, first/last records, at least two page boundaries, multiline names, paired values, missing values, and unusual numerics.
 9. Manually compare representative records with rendered PDF pages.
 10. Rerun the full tests and verify every previously accepted monthly hash is unchanged.

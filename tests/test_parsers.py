@@ -41,6 +41,11 @@ class ParserTests(unittest.TestCase):
             split_legacy_triplet("235.72\n(N.A.)\n{235.72}"),
             ("235.72", None, "235.72"),
         )
+        self.assertEqual(
+            split_legacy_triplet("3/2024\n(-)\n[6/2024]"),
+            ("3/2024", None, "6/2024"),
+        )
+        self.assertEqual(split_legacy_triplet("/\n(-)\n[3/2024]"), (None, None, "3/2024"))
 
     def test_parenthesized_values(self):
         self.assertEqual(split_parenthesized_pair("265.91\n(265.91)"), ("265.91", "265.91"))

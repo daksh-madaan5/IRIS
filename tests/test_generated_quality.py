@@ -86,11 +86,12 @@ class GeneratedQualityRegressionTests(unittest.TestCase):
         path = root / "data" / "validation" / "combined_summary.json"
         self.assertTrue(path.exists(), f"Run extraction first: missing {path}")
         summary = json.loads(path.read_text(encoding="utf-8"))
-        self.assertEqual(summary["rows"], 39162)
-        self.assertEqual(summary["unique_projects"], 4217)
+        self.assertEqual(summary["rows"], 40972)
+        self.assertEqual(summary["unique_projects"], 4238)
         self.assertEqual(
             summary["report_months"],
             [
+                "2024-06",
                 "2024-07",
                 "2024-08",
                 "2024-09",
@@ -101,10 +102,10 @@ class GeneratedQualityRegressionTests(unittest.TestCase):
                 *[f"2026-{month:02d}" for month in range(1, 8)],
             ],
         )
-        self.assertEqual(summary["projects_with_at_least_3_observations"], 4039)
-        self.assertEqual(summary["projects_with_at_least_6_observations"], 3658)
-        self.assertEqual(summary["projects_with_at_least_10_observations"], 2267)
-        self.assertEqual(summary["projects_with_at_least_12_observations"], 2043)
+        self.assertEqual(summary["projects_with_at_least_3_observations"], 4052)
+        self.assertEqual(summary["projects_with_at_least_6_observations"], 3691)
+        self.assertEqual(summary["projects_with_at_least_10_observations"], 2301)
+        self.assertEqual(summary["projects_with_at_least_12_observations"], 2090)
         self.assertEqual(summary["projects_with_at_least_16_observations"], 0)
         self.assertEqual(summary["projects_with_at_least_18_observations"], 0)
         self.assertEqual(summary["projects_with_at_least_19_observations"], 0)

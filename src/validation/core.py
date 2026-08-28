@@ -65,7 +65,9 @@ RULE_CLASSIFICATION = {
 }
 
 
-def validate_records(records: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+def validate_records(
+    records: list[dict[str, Any]], *, project_code_structurally_absent: bool = False
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     warnings: list[dict[str, Any]] = []
     by_code: dict[str, list[dict[str, Any]]] = defaultdict(list)
 
@@ -90,7 +92,8 @@ def validate_records(records: list[dict[str, Any]]) -> tuple[list[dict[str, Any]
     for record in records:
         code = record.get("project_code")
         if not code:
-            warn(record, "missing_project_code", "Project code is missing", "project_code")
+            if not project_code_structurally_absent:
+                warn(record, "missing_project_code", "Project code is missing", "project_code")
         elif not re.fullmatch(r"(?:\d{6}|N\d{8}|\d{9})", str(code)):
             warn(record, "invalid_project_code", "Expected a supported source project-code format", "project_code")
         else:
@@ -180,6 +183,7 @@ def validate_records(records: list[dict[str, Any]]) -> tuple[list[dict[str, Any]
     severity_counts = Counter(x["severity"] for x in warnings)
     priority_counts = Counter(x["priority"] for x in warnings)
     category_counts = Counter(x["category"] for x in warnings)
+    missing_project_codes = sum(not record.get("project_code") for record in records)
     metrics = {
         "clean_project_rows": len(records),
         "warning_rows": len({(x["source_page"], x["source_row_number"]) for x in warnings}),
@@ -188,7 +192,8 @@ def validate_records(records: list[dict[str, Any]]) -> tuple[list[dict[str, Any]
         "warnings_by_severity": {code: severity_counts.get(code, 0) for code in ("ERROR", "WARNING", "INFO")},
         "warnings_by_priority": {code: priority_counts.get(code, 0) for code in ("HIGH", "MEDIUM", "LOW")},
         "warnings_by_category": dict(sorted(category_counts.items())),
-        "missing_project_codes": warning_counts.get("missing_project_code", 0),
+        "missing_project_codes": missing_project_codes,
+        "structurally_missing_project_codes": missing_project_codes if project_code_structurally_absent else 0,
         "invalid_project_codes": warning_counts.get("invalid_project_code", 0),
         "duplicate_project_codes": len([code for code, group in by_code.items() if len(group) > 1]),
         "duplicate_rows": len(duplicates),
