@@ -1,8 +1,8 @@
 # PAIMANA Modeling Handoff
 
 **Updated**: 2026-08-29  
-**Version**: 1.5 (Regime-Specific Logistic Refinement Completed)  
-**Phase**: Flagship H=3 regime-specific Logistic refinement complete — nonlinear models, calibration, and production modeling not begun.
+**Version**: 1.6 (Controlled CatBoost Nonlinear Challenger Completed)  
+**Phase**: Flagship H=3 controlled CatBoost nonlinear challenger comparison complete — XGBoost/LightGBM/RF not implemented; calibration and production modeling deferred.
 
 ---
 
@@ -14,7 +14,8 @@
 | `data/processed/projects_completed.csv` | 876 | `89BEA84FD68A22E327090C1E4E4533F5BCD745ADCA61EB4E66172EE9023BB910` |
 
 Pre-implementation regression baseline: **126/126 passing**. The post-implementation
-suite adds 13 dataset-builder tests; see Section 5 for the final result.
+suite adds 13 dataset-builder tests, 11 baseline tests, 7 robustness tests, 9 refinement tests,
+and 12 CatBoost challenger tests; see Section 9 for the final result (178/178 passing).
 
 ---
 
@@ -84,9 +85,14 @@ suite adds 13 dataset-builder tests; see Section 5 for the final result.
 | [`src/ml/dataset_builder.py`](file:///d:/coding/PAIMANA/src/ml/dataset_builder.py) | Added | Conservative H=3 target and leakage-safe at-T feature construction |
 | [`src/ml/evaluate_baselines.py`](file:///d:/coding/PAIMANA/src/ml/evaluate_baselines.py) | Added | Regime-separated strict-embargo walk-forward baseline evaluation |
 | [`src/ml/robustness_audit.py`](file:///d:/coding/PAIMANA/src/ml/robustness_audit.py) | Added | Fold stability, aggregation, cluster uncertainty, ablation, and calibration diagnostics |
+| [`src/ml/refine_logistic.py`](file:///d:/coding/PAIMANA/src/ml/refine_logistic.py) | Added | Regime-specific manual feature set and class-weight Logistic refinement |
+| [`src/ml/challenger_catboost.py`](file:///d:/coding/PAIMANA/src/ml/challenger_catboost.py) | Added | First controlled nonlinear challenger (CatBoost) with native categoricals |
+| [`requirements.txt`](file:///d:/coding/PAIMANA/requirements.txt) | Modified | Pinned `catboost==1.2.10` dependency |
 | [`tests/test_ml_dataset_builder.py`](file:///d:/coding/PAIMANA/tests/test_ml_dataset_builder.py) | Added | Builder semantics and generated-data regression tests |
 | [`tests/test_ml_evaluate_baselines.py`](file:///d:/coding/PAIMANA/tests/test_ml_evaluate_baselines.py) | Added | Embargo, preprocessing, leakage, regime, determinism, lagged-rule, and output tests |
 | [`tests/test_ml_robustness_audit.py`](file:///d:/coding/PAIMANA/tests/test_ml_robustness_audit.py) | Added | Feature partition, clustered bootstrap, aggregation, ablation-fold, output, and hash tests |
+| [`tests/test_ml_refine_logistic.py`](file:///d:/coding/PAIMANA/tests/test_ml_refine_logistic.py) | Added | Manual feature definitions, class-weight fits, cluster bootstrap, and hash tests |
+| [`tests/test_ml_challenger_catboost.py`](file:///d:/coding/PAIMANA/tests/test_ml_challenger_catboost.py) | Added | CatBoost data preparation, sentinels, paired cluster bootstrap, and regression tests |
 
 ---
 
@@ -607,6 +613,113 @@ poor probability quality, and Modern underprediction remains unresolved. Do not
 fit calibration until the final model family has been selected. No CatBoost,
 XGBoost, LightGBM, tree, boosting, or neural model has been implemented here.
 
+## 9. Controlled CatBoost Nonlinear Challenger Evaluation Completed
+
+Implementation: `src/ml/challenger_catboost.py`  
+Tests: `tests/test_ml_challenger_catboost.py`  
+Generated results: `data/ml/schedule_extension_3m/evaluation/catboost/`
+
+The first controlled nonlinear challenger evaluation reuses exactly the 12 Legacy
+and 5 Modern walk-forward origins, the strict `T_train + 3 < E` embargo, and
+regime separation. No XGBoost, LightGBM, Random Forest, neural networks, stacking,
+or automated hyperparameter search was performed.
+
+### Exact CatBoost configuration and preprocessing
+
+- **Model parameters**: `iterations=300` (fixed iteration count to avoid early-stopping validation leakage), `learning_rate=0.05`, `depth=5`, `l2_leaf_reg=3.0`, `random_seed=20260829`, `thread_count=4`, `verbose=False`.
+- **Categorical handling**: Native CatBoost categorical handling with string missingness sentinel `__MISSING__`. All categorical mappings and target statistics are learned exclusively from the training fold; unseen evaluation categories are handled natively without error or data leakage.
+- **Numeric missingness**: Preserved as `np.nan`; CatBoost's tree splitters evaluate missingness direction natively without artificial global or local imputation.
+- **Class weighting**: Evaluated transparently in two variants: `unweighted` (`auto_class_weights=None`) and `balanced` (`auto_class_weights="Balanced"`, computed exclusively from the current walk-forward training fold).
+- **Prohibited feature protection**: 0 prohibited features in any feature set.
+
+### Evaluated feature sets
+
+- **Legacy primary**: `trajectory_only` (11 features; matches the winning Legacy Logistic benchmark feature set).
+- **Legacy secondary**: `full_v1` (36 features; full input feature set including static, categorical, and trajectory features).
+- **Modern primary**: `static_only` (25 features; matches the winning Modern Logistic benchmark feature set).
+- **Modern secondary**: `full_v1` (36 features; full input feature set).
+
+### Aggregate candidate results and benchmark comparison
+
+Primary metric is concatenated out-of-fold Average Precision (PR-AUC) within regime.
+
+| Regime | Model | Feature Set | Weighting | AP / PR-AUC | ROC-AUC | Brier | ECE | Precision | Recall | F1 |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|
+| Legacy | Prevalence | REFERENCE | REFERENCE | 0.0928 | 0.4940 | 0.0859 | 0.0180 | NA | 0.0000 | 0.0000 |
+| Legacy | Lagged Rule | REFERENCE | REFERENCE | 0.1512 | 0.5636 | 0.0949 | 0.0949 | 0.4925 | 0.1426 | 0.2211 |
+| Legacy | Winning Logistic Benchmark | `trajectory_only` | Balanced | 0.3397 | 0.7457 | 0.1957 | 0.3340 | 0.2518 | 0.6164 | 0.3575 |
+| Legacy | CatBoost | `trajectory_only` | Unweighted | 0.2873 | 0.7417 | 0.0830 | 0.0335 | 0.3823 | 0.1800 | 0.2447 |
+| Legacy | CatBoost | `trajectory_only` | Balanced | 0.3002 | 0.7263 | 0.1956 | 0.3249 | 0.2364 | 0.6108 | 0.3409 |
+| Legacy | CatBoost | `full_v1` | Balanced | 0.3978 | 0.8022 | 0.1300 | 0.1636 | 0.2592 | 0.6202 | 0.3656 |
+| Legacy | **CatBoost (Winner)** | `full_v1` | **Unweighted** | **0.4071** | **0.8064** | **0.0720** | **0.0287** | 0.5426 | 0.2540 | 0.3461 |
+| Modern | Prevalence | REFERENCE | REFERENCE | 0.4479 | 0.5061 | 0.3152 | 0.2568 | NA | 0.0000 | 0.0000 |
+| Modern | Lagged Rule | REFERENCE | REFERENCE | 0.4961 | 0.5636 | 0.4010 | 0.4010 | 0.6681 | 0.2139 | 0.3240 |
+| Modern | Winning Logistic Benchmark | `static_only` | Unweighted | 0.7587 | 0.8419 | 0.1916 | 0.1405 | 0.8083 | 0.3620 | 0.5000 |
+| Modern | CatBoost | `static_only` | Unweighted | 0.7567 | 0.8153 | 0.2129 | 0.1726 | 0.7953 | 0.4457 | 0.5712 |
+| Modern | CatBoost | `static_only` | Balanced | 0.7629 | 0.8224 | 0.1842 | 0.1026 | 0.7507 | 0.6359 | 0.6885 |
+| Modern | CatBoost | `full_v1` | Unweighted | 0.7602 | 0.8222 | 0.2137 | 0.1794 | 0.8010 | 0.4342 | 0.5632 |
+| Modern | **CatBoost (Winner)** | `full_v1` | **Balanced** | **0.7677** | **0.8292** | **0.1816** | **0.1061** | 0.7606 | 0.6269 | 0.6873 |
+
+### Statistical robustness and paired comparison vs Logistic benchmark
+
+Deterministic 1,000-resample project-cluster bootstrap 95% confidence intervals were
+computed for all candidates and for the paired difference $\Delta\text{AP} = \text{AP}_{\text{CatBoost}} - \text{AP}_{\text{Logistic}}$ on identical out-of-fold rows:
+
+- **Legacy Winning Challenger (`catboost_full_v1__unweighted`)**:
+  - CatBoost AP: **0.4071** (95% project-cluster CI: 0.3541–0.4578).
+  - Logistic Benchmark AP: **0.3397** (95% project-cluster CI: 0.2872–0.3884).
+  - Paired Difference $\Delta\text{AP}$: **+0.0674** (95% project-cluster CI: **+0.0376 to +0.0955**).
+  - Statistical significance: **Statistically significant ($p < 0.05$)**. Zero is strictly outside the 95% confidence interval.
+  - Calibration improvement: Brier score improves from 0.1957 to **0.0720** ($\Delta = -0.1238$, 95% CI: $-0.1285$ to $-0.1187$); ECE improves from 0.3340 to **0.0287** ($\Delta = -0.3053$, 95% CI: $-0.3133$ to $-0.2967$).
+- **Modern Winning Challenger (`catboost_full_v1__balanced`)**:
+  - CatBoost AP: **0.7677** (95% project-cluster CI: 0.7420–0.7937).
+  - Logistic Benchmark AP: **0.7587** (95% project-cluster CI: 0.7340–0.7861).
+  - Paired Difference $\Delta\text{AP}$: **+0.0090** (95% project-cluster CI: **−0.0196 to +0.0338**).
+  - Statistical significance: **Not statistically significant**. The 95% confidence interval spans zero.
+  - Calibration: Brier score improves slightly from 0.1916 to 0.1816; ECE improves from 0.1405 to 0.1061.
+
+### Weighting effects and calibration analysis
+
+- **Legacy**: Class balancing is not required for CatBoost to achieve high AP in Legacy. In fact, unweighted CatBoost achieves the highest AP (0.4071 vs 0.3978) while preserving natural probability calibration (mean score 0.1020 vs 0.0945 base rate, ECE 0.0287). This resolves the trade-off encountered in Logistic refinement, where balanced weighting was necessary for AP but severely degraded probability calibration.
+- **Modern**: Class balancing modestly improves CatBoost AP (0.7677 balanced vs 0.7602 unweighted) and recall at the descriptive 0.5 threshold (0.6269 vs 0.4342), with mean predicted probability of 0.3785 vs 0.4493 base rate (ECE 0.1061).
+
+### Stability checks and February 2025
+
+- **February 2025**: Retained across all 12 Legacy folds. For `catboost_full_v1__unweighted`, Feb-2025 fold AP is **0.0711** (compared to 0.0347 in Logistic and 0.0437 in lagged rule). Pooled Legacy AP without Feb-2025 is **0.4162**.
+- **Fold AP dispersion**:
+  - Legacy CatBoost winner fold AP spans 0.0711 to 0.6328 (fold mean 0.4184, std 0.1628). The improvement over Logistic is broadly distributed across historical origins rather than isolated to a single fold.
+  - Modern CatBoost winner fold AP spans 0.7238 to 0.8394 (fold mean 0.7696, std 0.0411), demonstrating tight temporal stability.
+
+### Feature importance diagnostic
+
+Feature importance averaged across walk-forward folds confirms:
+1. `months_to_effective_schedule` is the primary predictor in both regimes (18.1–22.2% in Legacy, 27.5–31.5% in Modern).
+2. Administrative identifiers / categoricals (`agency` 14.3–15.2%, `state` 14.4%, `sector` 6.5–11.5%) provide substantial predictive value in full-v1 CatBoost models through native decision-tree categorical splits.
+3. Cost and schedule scale features (`months_to_original_schedule` 5.1–8.1%, `original_cost` 4.2–6.4%, `physical_progress_t` 5.6–6.9%) contribute balanced importance.
+4. No single feature exhibits artificial or leakage-level dominance (>50%), and 0 prohibited metadata features entered any feature set.
+
+### Tests, hashes, and final status
+
+12 new CatBoost challenger unit/regression tests cover data preparation, string missingness sentinels, deterministic execution within tolerance, paired cluster bootstrap, fold alignment with Logistic benchmarks, and canonical hash protection.
+
+- **Full regression suite**: **178/178 passing** (126 extraction/linkage baseline + 13 dataset builder + 11 baseline evaluation + 7 robustness audit + 9 Logistic refinement + 12 CatBoost challenger).
+- **Canonical dataset hashes (immutable)**:
+  - `projects_monthly.csv`: `9512A9881E17DFDED6E182D87A8DFB1C4EDBD36C0D9B8A7DA9FD1ABB7E002FBF`
+  - `projects_completed.csv`: `89BEA84FD68A22E327090C1E4E4533F5BCD745ADCA61EB4E66172EE9023BB910`
+
+### Explicit Regime Recommendations
+
+- **Legacy Regime**: **`PREFER_CATBOOST`**  
+  `catboost_full_v1__unweighted` significantly outperforms the locked balanced Logistic benchmark ($\Delta\text{AP} = +0.0674$, 95% project-cluster CI: $+0.0376$ to $+0.0955$, $p < 0.05$). Furthermore, it resolves the severe probability distortion of the balanced Logistic baseline, reducing ECE from 0.3340 to 0.0287 and Brier score from 0.1957 to 0.0720.
+- **Modern Regime**: **`INCONCLUSIVE`** (or **`KEEP_LOGISTIC`** for model parsimony)  
+  `catboost_full_v1__balanced` achieves a modest point-estimate gain ($\Delta\text{AP} = +0.0089$), but the paired 95% project-cluster CI spans zero ($-0.0196$ to $+0.0338$), indicating no statistically significant difference from the linear `logistic_static_only__unweighted` baseline (AP 0.7587). The unweighted static Logistic model remains highly competitive and parsimonious in the modern era.
+
+### Exact Next Steps for Future Agent
+
+1. **Model Calibration**: Implement within-fold calibration (e.g. Platt scaling / Isotonic regression fit strictly on walk-forward training folds) for the selected Legacy CatBoost model and Modern Logistic model.
+2. **Operational Decision Thresholds**: Perform threshold selection based on training-fold precision/recall operating constraints (e.g. minimum 50% or 70% recall) and evaluate out-of-fold cost/utility.
+3. **Secondary Targets**: Extend the validated ML pipeline to secondary targets (`target_exp_non_improvement_3m`, `target_progress_non_improvement_3m`, `target_effective_cost_esc_3m`).
+
 ---
 
-*Flagship H=3 dataset construction, baseline evaluation, robustness audit, and regime-specific Logistic refinement complete. No nonlinear model or calibration fit. Both canonical datasets preserved unchanged.*
+*Flagship H=3 dataset construction, baseline evaluation, robustness audit, regime-specific Logistic refinement, and controlled CatBoost nonlinear challenger comparison complete. No further nonlinear models or calibration fit. Both canonical datasets preserved unchanged.*
