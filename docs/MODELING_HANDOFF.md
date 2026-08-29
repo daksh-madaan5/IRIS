@@ -1,8 +1,8 @@
 # PAIMANA Modeling Handoff
 
 **Updated**: 2026-08-29  
-**Version**: 1.4 (Baseline Robustness Audit Completed)  
-**Phase**: Flagship H=3 baseline evaluation and robustness diagnostics complete — advanced models and production modeling not begun.
+**Version**: 1.5 (Regime-Specific Logistic Refinement Completed)  
+**Phase**: Flagship H=3 regime-specific Logistic refinement complete — nonlinear models, calibration, and production modeling not begun.
 
 ---
 
@@ -431,6 +431,182 @@ Do not calibrate or advance to tree, boosting, neural, or pooled production mode
 until the February reporting-state discontinuity, Modern categorical novelty, and
 fold-specific calibration drift are incorporated into the validation plan.
 
+## 8. Regime-Specific Logistic Refinement Completed
+
+Implementation: `src/ml/refine_logistic.py`  
+Tests: `tests/test_ml_refine_logistic.py`  
+Generated results: `data/ml/schedule_extension_3m/evaluation/refinement/`
+
+The refinement reuses exactly the accepted 12 Legacy and 5 Modern walk-forward
+origins and the strict `T_train + 3 < E` embargo. All preprocessing remains
+fold-local. Every candidate was fitted twice and reported separately: unweighted
+L2 and `class_weight="balanced"` L2, with otherwise identical `C=1.0`, `lbfgs`,
+2,000-iteration, and fixed-seed settings. The 0.5 threshold is descriptive only;
+no threshold was tuned on a test fold. No calibration or nonlinear model was fit.
+
+### Exact manually declared feature sets
+
+No automated feature-selection search was performed. The candidate inputs are:
+
+**Legacy trajectory-only (11 inputs)**
+
+1. `exp_delta_1m`
+2. `exp_delta_3m`
+3. `past_exp_stagnant_3m`
+4. `past_progress_delta_3m`
+5. `past_progress_stagnant_3m`
+6. `n_prior_schedule_extensions`
+7. `n_prior_cost_revisions`
+8. `observed_tenure_months`
+9. `exp_delta_1m_is_supported`
+10. `exp_delta_3m_is_supported`
+11. `progress_delta_3m_is_supported`
+
+**Legacy trajectory + minimal useful static numeric (16 inputs)** uses all 11
+above plus:
+
+12. `project_age_months`
+13. `months_to_effective_schedule`
+14. `schedule_revision_lag_months`
+15. `expenditure_to_original_cost_ratio`
+16. `revised_date_is_present`
+
+These additions were pre-specified to represent project age, current schedule
+distance, reported revision magnitude/presence, and expenditure scale. No Legacy
+categorical field was added to this minimal candidate.
+
+**Modern static-only (25 inputs)**
+
+1. `sector`
+2. `agency`
+3. `state`
+4. `original_cost`
+5. `cumulative_expenditure_t`
+6. `revised_cost_t`
+7. `physical_progress_t`
+8. `project_age_months`
+9. `months_to_original_schedule`
+10. `months_to_effective_schedule`
+11. `schedule_revision_lag_months`
+12. `schedule_has_been_revised`
+13. `months_since_start`
+14. `expenditure_to_original_cost_ratio`
+15. `revised_to_original_cost_ratio`
+16. `cost_has_been_revised`
+17. `state_is_missing`
+18. `approval_date_is_missing`
+19. `original_completion_date_is_missing`
+20. `revised_cost_is_present`
+21. `revised_date_is_present`
+22. `physical_progress_is_present`
+23. `physical_progress_supported`
+24. `start_date_is_present`
+25. `start_date_supported`
+
+**Modern static + selected trajectory (29 inputs)** uses all 25 above plus only:
+
+26. `exp_delta_3m`
+27. `past_progress_delta_3m`
+28. `n_prior_schedule_extensions`
+29. `observed_tenure_months`
+
+This Modern candidate deliberately does not inherit all Legacy trajectory inputs.
+
+**Full-v1 (36 inputs, both regimes)** contains the same 25 static inputs and the
+complete 11-input trajectory set above in the accepted manifest's interleaved
+order. It exactly matches `manifest.json["feature_columns"]`; the recomputed unweighted full-v1 scores
+reconcile with the accepted baseline to maximum absolute difference
+`4.996003610813204e-16`.
+
+### Candidate comparison and winners
+
+The primary criterion is concatenated out-of-fold AP within regime. Prevalence AP
+is 0.0928 Legacy / 0.4479 Modern, and lagged-rule AP is 0.1512 / 0.4961.
+
+| Regime | Feature set | Weighting | AP | ROC-AUC | Brier | ECE | Precision | Recall | F1 |
+|---|---|---|---:|---:|---:|---:|---:|---:|---:|
+| Legacy | Trajectory only | Balanced | **0.3397** | 0.7457 | 0.1957 | 0.3340 | 0.2518 | 0.6164 | 0.3575 |
+| Legacy | Trajectory + minimal static | Balanced | 0.3128 | 0.7573 | 0.1990 | 0.3292 | 0.2015 | 0.6569 | 0.3084 |
+| Legacy | Full-v1 | Balanced | 0.3031 | 0.7491 | 0.1944 | 0.3093 | 0.2039 | 0.6756 | 0.3133 |
+| Legacy | Trajectory only | Unweighted | 0.2936 | 0.6961 | 0.0884 | 0.0753 | 0.4634 | 0.2092 | 0.2883 |
+| Legacy | Full-v1 | Unweighted | 0.2906 | 0.7360 | 0.0838 | 0.0529 | 0.4157 | 0.1843 | 0.2554 |
+| Legacy | Trajectory + minimal static | Unweighted | 0.2842 | 0.7178 | 0.0901 | 0.0742 | 0.3482 | 0.2335 | 0.2795 |
+| Modern | Static only | Unweighted | **0.7587** | 0.8419 | 0.1916 | 0.1405 | 0.8083 | 0.3620 | 0.5000 |
+| Modern | Static only | Balanced | 0.7567 | 0.8443 | 0.1796 | 0.1290 | 0.6430 | 0.9266 | 0.7592 |
+| Modern | Full-v1 | Balanced | 0.7184 | 0.8186 | 0.1772 | 0.0811 | 0.6837 | 0.8457 | 0.7561 |
+| Modern | Full-v1 | Unweighted | 0.7091 | 0.8072 | 0.2111 | 0.1664 | 0.7444 | 0.3609 | 0.4861 |
+| Modern | Static + selected trajectory | Balanced | 0.6555 | 0.7824 | 0.1988 | 0.1147 | 0.6557 | 0.8639 | 0.7455 |
+| Modern | Static + selected trajectory | Unweighted | 0.6526 | 0.7795 | 0.2250 | 0.1883 | 0.6696 | 0.3535 | 0.4627 |
+
+The **winning Legacy configuration** is trajectory-only, balanced L2 Logistic:
+AP 0.3397 (project-cluster 95% CI 0.2872–0.3884), ROC-AUC 0.7457
+(0.7210–0.7704), and Brier 0.1957 (0.1910–0.2008). It improves AP by 0.0491
+over the original unweighted full-v1 baseline and by 0.1885 over the lagged rule.
+
+The **winning Modern configuration** is static-only, unweighted L2 Logistic: AP
+0.7587 (project-cluster 95% CI 0.7340–0.7861), ROC-AUC 0.8419
+(0.8285–0.8554), and Brier 0.1916 (0.1844–0.1990). It improves AP by 0.0496
+over original unweighted full-v1 and by 0.2626 over the lagged rule. Adding the
+selected trajectory subset materially reduces Modern AP, so the full Legacy
+trajectory family should not be carried into Modern automatically.
+
+### Class weighting, calibration, and stability
+
+Class balancing helps Legacy AP for every feature set: +0.0461 trajectory-only,
++0.0286 trajectory-plus-static, and +0.0125 full-v1. This AP improvement is not
+a calibration improvement: the winning balanced Legacy model has mean probability
+0.4285 versus the 0.0945 event rate, Brier 0.1957, and ECE 0.3340. Balanced and
+unweighted results must therefore remain separately identified; balanced weighting
+is selected for Legacy only because AP is the declared primary criterion.
+
+For Modern static-only, balancing slightly hurts AP by 0.0021 (0.7587 to 0.7567),
+so the winning Modern model remains unweighted. Balancing improves Brier/ECE and
+recall at the descriptive fixed threshold, but changes the mean probability to
+0.5677 versus a 0.4493 event rate; this is not a reason to silently replace the
+unweighted AP winner.
+
+No calibration was fit. The unweighted Modern static-only winner naturally reduces
+the pooled predicted-minus-observed gap from −0.1507 for original full-v1 to
+−0.1319, an absolute reduction of 0.0188. It nevertheless underpredicts in all
+five Modern folds, and pooled ECE remains 0.1405. Systematic underprediction is
+therefore reduced modestly, not resolved; calibration remains a separate later
+stage after final model-family selection.
+
+Legacy remains unstable. The winning model's fold AP spans 0.0347–0.7739 with
+fold mean 0.4026 and standard deviation 0.2349. February 2025 is retained and is
+the minimum fold at AP 0.03475; pooled AP changes from 0.3397 to 0.3465 when shown
+descriptively without it. This reports the fold's stability effect only and makes
+no causal claim. Modern winner fold AP is materially tighter at 0.6916–0.8010
+(mean 0.7516, standard deviation 0.0467).
+
+Project-cluster 95% intervals use 1,000 deterministic whole-project resamples and
+are provided for AP, ROC-AUC, Brier, ECE, precision, recall, and F1 for every
+candidate and reference. Complete candidate, fold, aggregate, prediction, exact
+feature-list, preprocessing-audit, configuration-manifest, and cluster-CI artifacts
+are present in the refinement directory.
+
+Nine refinement tests cover exact manual feature definitions, separate class-weight
+fits, deterministic cluster bootstrap, accepted folds/populations, strict embargo,
+full-v1 score reconciliation, calibration scope, February retention, generated
+artifact counts, and canonical hash protection. Final full-suite status is
+**166/166 passing**.
+
+Canonical hashes remain unchanged:
+
+- `projects_monthly.csv`: `9512A9881E17DFDED6E182D87A8DFB1C4EDBD36C0D9B8A7DA9FD1ABB7E002FBF`
+- `projects_completed.csv`: `89BEA84FD68A22E327090C1E4E4533F5BCD745ADCA61EB4E66172EE9023BB910`
+
+### Recommendation
+
+Proceed to a separately authorized, regime-specific nonlinear model-family
+comparison next, retaining these two Logistic winners as mandatory benchmarks and
+reusing the same folds, embargo, fold-local preprocessing, cluster uncertainty,
+and explicit February stability reporting. The recommendation is for controlled
+model-family comparison, not deployment: Legacy's balanced AP gain comes with
+poor probability quality, and Modern underprediction remains unresolved. Do not
+fit calibration until the final model family has been selected. No CatBoost,
+XGBoost, LightGBM, tree, boosting, or neural model has been implemented here.
+
 ---
 
-*Flagship H=3 dataset construction, baseline evaluation, and robustness audit complete. No advanced model trained. Both canonical datasets preserved unchanged.*
+*Flagship H=3 dataset construction, baseline evaluation, robustness audit, and regime-specific Logistic refinement complete. No nonlinear model or calibration fit. Both canonical datasets preserved unchanged.*
