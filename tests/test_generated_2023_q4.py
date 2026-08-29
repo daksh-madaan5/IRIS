@@ -66,10 +66,10 @@ class Generated2023Q4AcceptanceTests(unittest.TestCase):
 
     def test_combined_gap_and_longitudinal_acceptance(self):
         summary = json.loads(
-            (self.root / "data" / "validation" / "longitudinal_summary_2023_07_2026_07.json").read_text(encoding="utf-8")
+            (self.root / "data" / "validation" / "longitudinal_summary_2023_04_2026_07.json").read_text(encoding="utf-8")
         )
-        self.assertEqual(summary["rows"], 55358)
-        self.assertEqual(summary["unique_projects"], 4574)
+        self.assertEqual(summary["rows"], 60287)
+        self.assertEqual(summary["unique_projects"], 4649)
         self.assertEqual(summary["duplicate_project_month_keys"], 0)
         self.assertNotIn("2023-12", summary["report_months"])
         transitions = {
@@ -83,7 +83,7 @@ class Generated2023Q4AcceptanceTests(unittest.TestCase):
 
         combined = self.root / "data" / "processed" / "projects_monthly.csv"
         digest = hashlib.sha256(combined.read_bytes()).hexdigest().upper()
-        self.assertEqual(digest, "9733A05BE6DC63340E713128F7BE3EE1FF77B3F2661287DBAF0580A715F9AD67")
+        self.assertEqual(digest, "2301524D9A7AF597672716FB6D483FBBCCCBCAA9B9A57E0A154AC7E42F4878FA")
 
 
 if __name__ == "__main__":
