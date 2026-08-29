@@ -1,8 +1,8 @@
 # PAIMANA Modeling Handoff
 
 **Updated**: 2026-08-30
-**Version**: 1.8 (Calibration and Operational Policy Evaluation Complete)
-**Phase**: Model-family selections remain closed (Legacy PREFER_CATBOOST, Modern KEEP_LOGISTIC). The approved calibration and operational-policy design has been implemented and evaluated; no final production threshold or alert-rate cap is frozen.
+**Version**: 1.9 (Deterministic Locked-Model Explainability Complete)
+**Phase**: Model-family selections remain closed (Legacy PREFER_CATBOOST, Modern KEEP_LOGISTIC). Calibration and operational-policy evaluation remains unchanged. The first deterministic predictive-explanation layer is complete; no dashboard, generated narratives, counterfactuals, new target, model family, or threshold selection was added.
 
 ---
 
@@ -13,9 +13,9 @@
 | `data/processed/projects_monthly.csv` | 64,608 | `9512A9881E17DFDED6E182D87A8DFB1C4EDBD36C0D9B8A7DA9FD1ABB7E002FBF` |
 | `data/processed/projects_completed.csv` | 876 | `89BEA84FD68A22E327090C1E4E4533F5BCD745ADCA61EB4E66172EE9023BB910` |
 
-Pre-implementation regression baseline: **126/126 passing**. The post-implementation
-suite adds 13 dataset-builder tests, 11 baseline tests, 7 robustness tests, 9 refinement tests,
-and 12 CatBoost challenger tests; see Section 9 for the final result (178/178 passing).
+The explainability pre-implementation regression baseline was **191/191 passing**.
+Eleven deterministic-explanation tests were added; see Section 13 for the current
+full-suite result (**202/202 passing**).
 
 ---
 
@@ -869,15 +869,171 @@ base-rate drift between Modern calibration months, Legacy February instability,
 and the absence of stakeholder capacity/cost inputs. These preclude freezing a
 Modern threshold, a universal numerical threshold, or an alert-rate cap.
 
+The calibration-policy next steps remain pending and unchanged: collect additional
+mature Modern outcomes, and obtain stakeholder capacity and error-cost inputs
+before freezing any production threshold or cap. The separately authorized first
+explainability stage is recorded below.
+
+## 13. Deterministic Locked-Model Explainability Completed
+
+Implementation: `src/ml/explain_locked_models.py`
+
+Contract: `docs/explanation_contract.md`
+
+Tests: `tests/test_ml_explain_locked_models.py`
+
+Generated results: `data/ml/schedule_extension_3m/evaluation/explainability/`
+
+### Exact explanation methods and score separation
+
+- Legacy `catboost_full_v1__unweighted` uses CatBoost-native TreeSHAP for the
+  exact fold-fitted model. The expected value and 36 native feature contributions
+  are in CatBoost raw-margin/logit space.
+- Modern `logistic_static_only__unweighted` uses the exact fold-fitted frequency
+  encoding, numeric standardization, missingness components, fitted intercept,
+  and coefficients. Each encoded local contribution is transformed value
+  multiplied by its fitted coefficient, in raw-logit space. Encoded components
+  retain their human-readable source feature and at-T source/derived value.
+- Platt calibration remains a separate score transformation. Local artifacts
+  record raw model probability, raw decision score, calibrated probability when
+  active, and calibration status. Platt terms never enter feature contributions.
+- Feature contributions describe predictive association with the fitted output.
+  They are not causal attribution.
+
+For every row, the implemented invariant is:
+
+`expected_base_value + sum(feature_contribution) = raw_decision_score`
+
+The maximum reconciliation error is **1.33e-14** for Legacy TreeSHAP and
+**3.55e-15** for Modern Logistic, against the declared `1e-10` tolerance. Refitted
+raw scores reconcile with the locked operational-policy predictions to a maximum
+absolute difference of **4.97e-14**.
+
+### Local records, source values, and ranks
+
+All 17 accepted evaluation origins and **25,189** project-month rows are
+explained. `local_explanations.csv` preserves **996,894** native/encoded
+contribution rows. `top_contributors.csv` contains a configurable source-feature
+view, generated here with up to five positive and five negative contributors per
+project-month; the complete vector remains authoritative.
+
+Risk rank and percentile are computed only inside the same report month, regime,
+and locked model. Rank 1 is highest operational probability; equal scores use
+`project_code` ascending. Percentile is
+`(month_population - rank + 1) / month_population`. Modern 2026-04 ranks use the
+active calibrated probability, while its explanations remain tied to the raw
+Logistic score. The Platt transformation is monotonic and does not alter ordering.
+
+No feature value is manufactured for a missing input. Support/presence and
+missingness components retain their literal model meaning. `project_code` appears
+only as metadata. Project name, future target-event fields, completion metadata,
+completed-project information, provenance, and unintended identifiers are absent
+from the model feature vectors.
+
+### Global contribution findings
+
+Global rank is mean absolute source-feature contribution over concatenated OOF
+rows within regime. The leading Legacy TreeSHAP features are:
+
+| Rank | Legacy feature | Mean absolute contribution |
+|---:|---|---:|
+| 1 | `months_to_effective_schedule` | 0.7123 |
+| 2 | `agency` | 0.4810 |
+| 3 | `state` | 0.4260 |
+| 4 | `months_to_original_schedule` | 0.1119 |
+| 5 | `n_prior_schedule_extensions` | 0.1093 |
+| 6 | `schedule_revision_lag_months` | 0.1092 |
+| 7 | `project_age_months` | 0.0889 |
+| 8 | `sector` | 0.0860 |
+| 9 | `original_cost` | 0.0794 |
+| 10 | `observed_tenure_months` | 0.0666 |
+
+The leading Modern source-aggregated Logistic features are:
+
+| Rank | Modern feature | Mean absolute contribution |
+|---:|---|---:|
+| 1 | `months_to_effective_schedule` | 0.9036 |
+| 2 | `physical_progress_t` | 0.3239 |
+| 3 | `sector` | 0.1983 |
+| 4 | `months_to_original_schedule` | 0.1957 |
+| 5 | `revised_cost_t` | 0.1747 |
+| 6 | `months_since_start` | 0.1668 |
+| 7 | `schedule_revision_lag_months` | 0.1310 |
+| 8 | `original_cost` | 0.0946 |
+| 9 | `start_date_supported` | 0.0758 |
+| 10 | `project_age_months` | 0.0708 |
+
+`global_feature_contributions.csv` also reports signed mean, standard deviation,
+minimum, p05, p25, median, p75, p95, maximum, and positive/negative/zero
+frequencies for every source feature.
+
+### Legacy TreeSHAP versus prior CatBoost importance
+
+The TreeSHAP and previously exported CatBoost importance top-10 sets are identical
+(top-10 Jaccard **1.0**), and their full 36-feature rank Spearman correlation is
+**0.9792**. They are not treated as interchangeable measures. The largest rank
+disagreements are reported explicitly: `past_progress_stagnant_3m` is TreeSHAP
+rank 21 versus prior rank 28; `n_prior_cost_revisions` is 25 versus 20;
+`n_prior_schedule_extensions` is 5 versus 9; and
+`revised_to_original_cost_ratio` is 18 versus 14. No ranking was adjusted to make
+the measures agree.
+
+### Fold-level stability and retained unstable origins
+
+Legacy fold top-10 overlap with the global top 10 has mean Jaccard **0.685**,
+range **0.538-0.818**. `months_to_effective_schedule`, `agency`, `state`, and
+`project_age_months` are top-10 features in all 12 origins. February 2025 remains
+in place and has Jaccard **0.538**, tied for the minimum. Its top 10 are
+`months_to_effective_schedule`, `agency`, `state`, `physical_progress_t`,
+`observed_tenure_months`, `schedule_has_been_revised`, `sector`,
+`project_age_months`, `months_to_original_schedule`, and
+`past_progress_stagnant_3m`. This variation is reported without a real-world
+explanation.
+
+Modern fold top-10 overlap has mean Jaccard **0.762**, range **0.538-0.818**.
+Seven features are top 10 in every origin: `months_to_effective_schedule`,
+`physical_progress_t`, `revised_cost_t`, `months_to_original_schedule`, `sector`,
+`months_since_start`, and `schedule_revision_lag_months`. The first four Modern
+origins each have Jaccard 0.818; 2026-04 has 0.538, with `agency`, `state`, and
+`start_date_is_present` entering its top 10. No fold is removed and no source of
+the variation is asserted.
+
+The stable leading features support a reasonably consistent explanation layer,
+while the February Legacy and April Modern changes require continued fold-level
+reporting rather than a single timeless global narrative.
+
+### Artifacts, tests, and immutable inputs
+
+Generated artifacts are:
+
+- `local_explanations.csv`: 996,894 complete native/encoded contribution rows;
+- `top_contributors.csv`: 250,570 configured top-contributor rows;
+- `global_feature_contributions.csv`: 61 regime-feature summaries;
+- `fold_explanation_stability.csv`: 557 fold-feature summaries;
+- `risk_rankings.csv`: 25,189 project-month rankings;
+- `explainability_manifest.json`: methods, folds, hashes, reconciliation,
+  feature-scope validation, global comparison, and stability audit.
+
+Eleven new tests cover TreeSHAP/logit reconciliation, locked regime/model use,
+within-month ranks, prohibited features, metadata separation, calibration
+separation, deterministic explanation ordering, global/fold completeness,
+artifact counts, and canonical hash protection. The full suite is **202/202
+passing**.
+
+Canonical hashes remain unchanged:
+
+- `projects_monthly.csv`: `9512A9881E17DFDED6E182D87A8DFB1C4EDBD36C0D9B8A7DA9FD1ABB7E002FBF`
+- `projects_completed.csv`: `89BEA84FD68A22E327090C1E4E4533F5BCD745ADCA61EB4E66172EE9023BB910`
+
 ### Exact next step
 
-Collect additional mature Modern outcomes and rerun this unchanged strict nested
-OOF evaluation so M6+ provide calibration and policy stability evidence. In
-parallel, obtain stakeholder workload/capacity and false-negative/false-positive
-cost inputs before any production threshold or cap is frozen. Do not add another
-model family, secondary target, SHAP/explainability layer, or cost-sensitive
-threshold in the current phase.
+Perform a consumer-contract acceptance review of `docs/explanation_contract.md`
+and manually audit representative high-, middle-, and low-ranked project records
+against their complete contribution vectors. Any dashboard UI, generated
+narrative, counterfactual recommendation, new target, model family, or threshold
+work requires separate authorization. Continue collecting mature Modern outcomes
+for the already documented calibration-policy stability step.
 
 ---
 
-*Flagship H=3 model families remain closed. The approved calibration and operational-policy evaluation is complete, with both canonical datasets preserved unchanged.*
+*Flagship H=3 model families, target, calibration policy, and canonical inputs remain unchanged. The first deterministic predictive-explanation layer is complete.*
