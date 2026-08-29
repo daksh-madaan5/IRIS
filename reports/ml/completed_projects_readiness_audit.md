@@ -5,7 +5,7 @@
 This audit evaluates the standalone **Completed Projects** pipeline and canonical dataset:
 - **Canonical File**: `data/processed/projects_completed.csv`
 - **Current SHA-256 Hash**: `89BEA84FD68A22E327090C1E4E4533F5BCD745ADCA61EB4E66172EE9023BB910`
-- **Ongoing Dataset Integrity Baseline**: `data/processed/projects_monthly.csv` (`73E47AA487E70A28FE3C984E532A6E23D21897B60C176BEEA80FB1C06F73E191`)
+- **Ongoing Dataset Integrity Baseline**: `data/processed/projects_monthly.csv` (`9512A9881E17DFDED6E182D87A8DFB1C4EDBD36C0D9B8A7DA9FD1ABB7E002FBF`, 64,608 rows, 40 coded months)
 
 ### Audit Scope & Strict Boundaries
 Per project directives:
@@ -16,7 +16,12 @@ Per project directives:
 ### High-Level Verdict
 - **Extraction Fidelity**: **Exceptional**. The extraction achieves 100% serial continuity, 0 missing project IDs, 0 duplicate keys, and complete provenance tracking across 35 active monthly reports spanning April 2023 through July 2026.
 - **Dataset Structure**: The dataset comprises **876 records representing 876 distinct infrastructure projects** (100% unique projects, 0 repeated observations). It is a **pure cross-sectional dataset of completion events**, not a panel/time-series dataset.
-- **SIH-Level Prototype Readiness**: **Ready for a focused, static-baseline regression/classification task** (predicting final cost overrun ratio and schedule slippage in months from sanction-time attributes). It is **not suitable for dynamic monitoring or time-series trajectory forecasting** on its own.
+- **Modeling Target Coverage & Readiness**: **Heavily Qualified & Constrained**.
+  - `actual_completion_date` is reported in only **107/876 records (12.21%)** (0.0% in legacy layouts; omitted in June 2026), rendering exact physical duration and exact physical schedule delay unviable across the full dataset.
+  - `revised_cost` is reported in only **170/876 records (19.41%)** (0.0% in legacy layouts), making formal sanctioned cost escalation unviable for 80.6% of records.
+  - `cumulative_expenditure / original_cost` (available for 851 rows, 97.15%) reflects interim financial disbursements at publication time rather than audited final project costs (**72.15% of completed projects report expenditure < original cost** with median ratio 0.8353).
+  - `report_month - original_completion_date` (available for 828 rows, 94.52%) is a proxy for reporting slippage that conflates physical completion delay with administrative publishing delay (empirical reporting lag has a mean of +4.03 months in the 107 records where actual date is available).
+  - **Verdict**: The dataset is suitable only for an **exploratory static baseline demonstration with prominent proxy caveats**, but **cannot support definitive ground-truth project outcome modeling** without acknowledging these structural target limitations. Dynamic trajectory forecasting requires the 64,608-row canonical ongoing panel (`projects_monthly.csv`).
 
 ---
 
@@ -164,8 +169,8 @@ The Completed Projects dataset spans three distinct operational periods:
 | `cumulative_expenditure`| **100.0%** (876/876) | 100.0% | 100.0% | 100.0% | None |
 
 ### Numeric Distributions & Overrun Behavior
-- **Original Cost**: Range Rs. 100.0 Cr to 43,129.0 Cr (Median: Rs. 456.45 Cr; IQR: Rs. 260.0 Cr – Rs. 885.5 Cr).
-- **Final Cumulative Expenditure**: Range Rs. 0.0 Cr to 70,293.57 Cr (Median: Rs. 364.32 Cr).
+- **Original Cost**: Range Rs. 100.0 Cr to 43,129.0 Cr (Median: Rs. 456.45 Cr; IQR: Rs. 258.0 Cr – Rs. 998.8 Cr).
+- **Final Cumulative Expenditure**: Range Rs. 0.0 Cr to 70,293.57 Cr (Median: Rs. 364.06 Cr).
   - 4 projects report exactly 0.0 expenditure at completion (source-faithful reporting anomaly).
 - **Cost Overrun Ratio (`cumulative_expenditure / original_cost`)** (calculated for 851 projects with valid original cost):
   - **Min**: 0.0000
@@ -173,13 +178,15 @@ The Completed Projects dataset spans three distinct operational periods:
   - **Median**: **0.8353**
   - **75th percentile**: 1.0040
   - **Max**: 10.5432 (10-fold cost overrun)
-  - **Under budget / final settlement pending (`< 1.0`)**: 614 projects (72.15%)
+  - **Under budget / interim settlement pending (`< 1.0`)**: 614 projects (72.15%)
   - **On budget (`== 1.0`)**: 23 projects (2.70%)
   - **Cost Overrun (`> 1.0`)**: 214 projects (25.15%)
   - **Severe Overrun (`> 2.0x original cost`)**: 34 projects (4.00%)
 
+*Accounting Settlement & Disbursement Phenomenon*: 72.15% (614/851) of completed projects report `cumulative_expenditure < original_cost` (median ratio 0.8353), with 4 projects reporting exactly 0.0 spend. In Indian public infrastructure reporting, `cumulative_expenditure` reported at physical completion reflects interim recorded cash disbursements / contractor bills settled by the publication date, rather than audited final lifecycle project cost (retention amounts, arbitration, and final billing often settle years post-commissioning). Therefore, sub-1.0 ratios largely reflect accounting disbursement lag rather than genuine sub-budget execution.
+
 ### Delay Distributions (Using Report Month as Completion Month)
-Because `actual_completion_date` is only populated in 107 records, we evaluate project delay across all 828 projects with valid `original_completion_date` using `report_month` as the completion month proxy:
+Because `actual_completion_date` is only populated in 107 records (12.21%), we evaluate project delay across all 828 projects with valid `original_completion_date` using `report_month` as the completion month proxy:
 - **Delay Range**: -78 months (early completion) to +292 months (+24.3 years delay!).
 - **Median Delay**: **31 months (2.58 years)**.
 - **Mean Delay**: **36.2 months (3.02 years)**.
@@ -189,6 +196,8 @@ Because `actual_completion_date` is only populated in 107 records, we evaluate p
 - **Delayed by > 1 year (`> 12 months`)**: 632 projects (76.33%).
 - **Delayed by > 3 years (`> 36 months`)**: 358 projects (43.24%).
 - **Delayed by > 5 years (`> 60 months`)**: 160 projects (19.32%).
+
+*Administrative Publication Lag*: Delay calculated as `report_month - original_completion_date` is an upper-bound administrative proxy that conflates physical execution delay with Flash Report publication lag. In the 107 records where `actual_completion_date` is known, reporting lag (`report_month - actual_completion_date`) averages +4.03 months (range -1 to +120 months; 43.9% reported in the same month, with multiple instances of multi-year notification delays).
 
 ---
 
@@ -204,10 +213,10 @@ graph TD
     A --> E[Target 4: Project Duration]
     A --> F[Target 5: Revised Cost Escalation]
     
-    B -->|851 rows - 97.2%| G[VIABLE & RECOMMENDED]
-    C -->|828 rows - 94.5%| H[VIABLE & RECOMMENDED]
-    D -->|107 rows - 12.2%| I[UNSUITABLE - Sample Too Small]
-    E -->|106 rows - 12.1%| J[UNSUITABLE - Sample Too Small]
+    B -->|851 rows - 97.2%| G[QUALIFIED PROXY ONLY - Disbursement Lag]
+    C -->|828 rows - 94.5%| H[QUALIFIED PROXY ONLY - Publication Lag]
+    D -->|107 rows - 12.2%| I[UNSUITABLE - Severe Truncation]
+    E -->|106 rows - 12.1%| J[UNSUITABLE - Severe Truncation]
     F -->|170 rows - 19.4%| K[UNSUITABLE - Era Restricted]
 ```
 
@@ -216,26 +225,26 @@ graph TD
 #### Target 1: Cost Overrun Ratio (`cumulative_expenditure / original_cost`)
 - **Observable Records**: **851 projects** (97.15% coverage).
 - **Historical Scope**: Complete (spans all 35 active months from April 2023 to July 2026).
-- **Defensibility**: **HIGH**. This is a standard, highly defensible infrastructure benchmark. Can be formulated as a continuous regression target (predicting ratio) or a binary classification target (`is_cost_overrun = ratio > 1.0`).
+- **Defensibility**: **QUALIFIED PROXY ONLY**. While mathematically computable across 97.2% of the dataset, 72.15% of records report ratios < 1.0 (median 0.8353) due to interim accounting disbursement lag at commissioning. Any model trained on this target predicts *reporting-time expenditure ratios*, not final audited project cost overruns.
 - **Leakage Safeguard**: Features must come strictly from sanction-time baselines (`original_cost`, `sector`, `agency`, `state`, planned duration).
 
 #### Target 2: Schedule Slippage in Months (`report_month - original_completion_date`)
 - **Observable Records**: **828 projects** (94.52% coverage).
 - **Historical Scope**: Complete (spans all 35 active months).
-- **Defensibility**: **HIGH**. Measures execution delay relative to original sanction commitment. Can be formulated as regression (months delayed) or classification (`delay > 12 months`, `delay > 36 months`).
+- **Defensibility**: **QUALIFIED PROXY ONLY**. Measures reporting slippage (Flash Report appearance relative to original sanction commitment) rather than physical commissioning delay. Empirical reporting lag averages +4.03 months (up to 10 years in extreme outliers) in records where exact actual completion date is known.
 - **Leakage Safeguard**: Predictable at project inception from baseline attributes.
 
 #### Target 3: Exact Schedule Delay (`actual_completion_date - original_completion_date`)
 - **Observable Records**: **107 projects** (12.21% coverage).
-- **Defensibility**: **LOW / UNSUITABLE**. Missing in 87.8% of records. Restricting to 107 projects introduces severe sample truncation and eliminates 88% of historical data.
+- **Defensibility**: **UNSUITABLE / SEVERELY TRUNCATED**. Completely absent in legacy layouts (0.0%) and omitted in June 2026 (130 rows). Restricting to 107 projects introduces severe sample truncation and eliminates 87.8% of the historical dataset.
 
 #### Target 4: Project Duration (`actual_completion_date - start_date`)
 - **Observable Records**: **106 projects** (12.10% coverage).
-- **Defensibility**: **LOW / UNSUITABLE**. `start_date` is absent from all legacy layouts (Eras 1 & 2).
+- **Defensibility**: **UNSUITABLE / SEVERELY TRUNCATED**. `start_date` and `actual_completion_date` are structurally absent from all legacy layouts (Eras 1 & 2).
 
 #### Target 5: Sanctioned Cost Escalation (`revised_cost / original_cost`)
 - **Observable Records**: **170 projects** (19.41% coverage).
-- **Defensibility**: **LOW / UNSUITABLE**. `revised_cost` is absent from legacy layouts and was only reported in 65.6% of modern 7-column records.
+- **Defensibility**: **UNSUITABLE / SEVERELY RESTRICTED**. `revised_cost` is structurally absent from legacy layouts (0.0%) and was reported in only 65.6% of modern 7-column records. Missing for 80.59% of the dataset.
 
 ### Critical Limitation: Survivorship Bias
 Because `projects_completed.csv` contains exclusively projects that succeeded in reaching completion, any model trained on this dataset will suffer from **survivorship / selection bias**. It cannot predict project abandonment, indefinite stalling, or deletion.
@@ -273,17 +282,19 @@ Data leakage occurs when features fed to an ML model contain information that wo
 > *"Is the Completed Projects dataset now sufficient to be useful for an SIH-level ML project?"*
 
 ### Direct Answer
-**YES, but strictly for a static, inception-stage project outcome prediction prototype.**
+**QUALIFIED YES, BUT STRICTLY AS AN EXPLORATORY STATIC PROXY DEMONSTRATION WITH PROMINENT CAVEATS ON TARGET QUALITY.**
 
 ### Detailed Justification
-1. **Sufficient Scope**:
+1. **Sufficient Numeric Sample for Static Pipeline Demonstration**:
    - Sample size of **851–876 completed infrastructure projects** with verified original commitments and realized outcomes across 35 months.
-   - For an SIH (Smart India Hackathon) prototype, 851 curated, source-faithful real-world government project records is more than sufficient to demonstrate a defensible ML pipeline.
-   - Supports two robust baseline prediction tasks:
-     - **Task A (Cost Overrun Risk)**: Predicting whether an infrastructure project will experience cost overrun (`expenditure > original_cost`), and expected overrun ratio, based on sector, agency, state, and initial budget tier.
-     - **Task B (Delay Severity Risk)**: Predicting expected completion delay in months, and classification into risk tiers (`On-time`, `Moderate Delay < 3 yrs`, `Severe Delay > 3 yrs`), using baseline parameters.
-2. **Strict Non-Applicability**:
-   - This dataset is **not sufficient for time-series forecasting, dynamic monitoring, or early-warning drift detection**. Completed projects provide zero monthly trajectory points. (Dynamic monitoring requires the 39,162-row longitudinal ongoing dataset).
+   - For an exploratory prototype or demonstration pipeline, 851 curated, source-faithful project records provides adequate sample size for tabular baselines.
+   - Can demonstrate two static baseline prediction tasks:
+     - **Task A (Disbursement Ratio / Cost Overrun Risk)**: Predicting reporting-time expenditure ratio (`expenditure / original_cost`) and binary overrun risk, acknowledging the interim disbursement lag artifact (72.15% sub-1.0).
+     - **Task B (Reporting Delay / Slippage Risk)**: Predicting publication delay in months relative to original commitment (`report_month - original_completion_date`), acknowledging administrative notification lag.
+2. **Severe Ground-Truth Target Missingness**:
+   - True final outcome targets (`actual_completion_date` at 12.2% coverage, `revised_cost` at 19.4% coverage) have extreme missingness (>80–88%) and cannot support general modeling across historical eras.
+3. **Strict Non-Applicability for Dynamic Monitoring**:
+   - This dataset is **not sufficient for time-series forecasting, dynamic monitoring, or early-warning drift detection**. Completed projects provide zero monthly trajectory points. (Dynamic monitoring requires the 64,608-row canonical ongoing panel dataset).
 
 ### Priority Recommendations
 - **P0 (Required before modeling)**:
@@ -294,24 +305,24 @@ Data leakage occurs when features fed to an ML model contain information that wo
   2. Extract December 2023 completed projects (serials 195–216, +22 projects) from the cumulative FY ledger in the January 2024 PDF.
   3. Formulate clean sector and agency categorical encodings (handling legacy spelling variants).
 - **P2 (Optional future extension)**:
-  1. Link completed projects to the ongoing projects dataset for historical survival analysis (requires user authorization to advance project phase).
+  1. Link completed projects to the ongoing projects dataset for historical survival analysis (requires explicit user authorization to advance project phase).
 
 ---
 
 ## 11. AUDIT 9 — Strategic Priority Recommendation: What Should We Do Next?
 
 ### Options Evaluated
-- **A. Extract more Completed Projects reports**: Low priority. The existing pipeline already spans April 2023 through July 2026. Extracting earlier years (2022 or earlier) brings diminishing returns for an SIH prototype.
-- **B. Handle deferred April/May 2024 Table 2**: Moderate technical value, but only adds ~30–40 records to an already sufficient 876-row dataset.
-- **C. Start analyzing/modeling (RECOMMENDED NEXT STEP)**: High value. The Completed Projects dataset has reached structural stability, 100% serial continuity, and sufficient sample size (876 projects). The logical next step is to formulate the baseline prediction problem, establish train/test splits, and baseline models.
+- **A. Extract more Completed Projects reports**: Low priority. The existing pipeline already spans April 2023 through July 2026. Extracting earlier years (2022 or earlier) brings diminishing returns.
+- **B. Handle deferred April/May 2024 Table 2**: Moderate technical value, adding ~30–40 records to the 876-row dataset.
+- **C. Document modeling feasibility and proxy limitations (RECOMMENDED NEXT STEP)**: High value. The Completed Projects dataset has reached structural stability, 100% serial continuity, and sufficient sample size (876 projects). The logical next step is to clearly document target limitations and maintain readiness for when the project phase advances.
 - **D. Obtain another source/dataset**: Unnecessary; existing data is rich.
 - **E. Work on identifier resolution**: Not applicable. Completed projects appear only once upon completion; there are no cross-era duplicate projects to resolve.
 
 ### Final Recommendation
-**Option C (with P0 Parser Corrections)**:
-1. First, apply the narrow P0 parser fix to recover the 25 unparsed character-spaced costs and 25 alternate date formats.
-2. Formulate the official Problem Formulation and Train/Test Specification for the Completed Projects Baseline Prediction Model (predicting cost escalation and delay from sanction attributes).
-3. If the user desires complete calendar continuity for FY 2023-24 and FY 2024-25, execute Option B (April/May 2024 Table 2) and extract December 2023 from January 2024.
+**Option C (with P0 Parser Corrections when parser maintenance occurs)**:
+1. When extraction updates are authorized, apply the narrow P0 parser fix to recover the 25 unparsed character-spaced costs and 25 alternate date formats.
+2. If the user authorizes completed project modeling, formulate problem definitions strictly using qualified proxy targets with documented disbursement and publication lag caveats.
+3. If complete calendar continuity for FY 2023-24 and FY 2024-25 is desired, execute Option B (April/May 2024 Table 2) and extract December 2023 from January 2024.
 
 ---
 
@@ -322,9 +333,9 @@ Before and after the entire audit, SHA-256 hashes of both canonical dataset file
 | Canonical Dataset File | Initial SHA-256 Hash | Post-Audit SHA-256 Hash | Status |
 |---|---|---|---|
 | `data/processed/projects_completed.csv` | `89BEA84FD68A22E327090C1E4E4533F5BCD745ADCA61EB4E66172EE9023BB910` | `89BEA84FD68A22E327090C1E4E4533F5BCD745ADCA61EB4E66172EE9023BB910` | **MATCH (Byte-Identical)** |
-| `data/processed/projects_monthly.csv` | `73E47AA487E70A28FE3C984E532A6E23D21897B60C176BEEA80FB1C06F73E191` | `73E47AA487E70A28FE3C984E532A6E23D21897B60C176BEEA80FB1C06F73E191` | **MATCH (Byte-Identical)** |
+| `data/processed/projects_monthly.csv` | `9512A9881E17DFDED6E182D87A8DFB1C4EDBD36C0D9B8A7DA9FD1ABB7E002FBF` | `9512A9881E17DFDED6E182D87A8DFB1C4EDBD36C0D9B8A7DA9FD1ABB7E002FBF` | **MATCH (Byte-Identical)** |
 
-Neither dataset was modified. All 15 unit tests in `tests/test_completed_projects.py` remain fully passing.
+Neither dataset was modified. All 15 unit tests in `tests/test_completed_projects.py` remain fully passing (126/126 full repository suite).
 
 ---
 

@@ -17,7 +17,7 @@ The coded canonical ongoing-project extraction covers **2023-01 through 2023-11*
 - Projects with at least 19 observations: **1,342**
 - Combined file: `data/processed/projects_monthly.csv`
 - Accepted combined SHA-256: `9512A9881E17DFDED6E182D87A8DFB1C4EDBD36C0D9B8A7DA9FD1ABB7E002FBF`
-- Current regression suite: **111/111 passing**
+- Current regression suite: **126/126 passing** (111 ongoing-project tests + 15 completed-project tests)
 
 Monthly row counts are:
 
@@ -183,20 +183,21 @@ Do not copy their large tables into new reports; link to them and record only ne
 ## Completed projects dataset state
 
 - Dataset file: `data/processed/projects_completed.csv`
-- Accepted SHA-256: `C8CB9672551827E91832682B9877012A1FA0F48F880EC5C917EBE8476C2F0D3C`
-- Total records: **811** (771 baseline + 40 Batch 3: October, November, December 2023)
-- Unique projects: **811**
+- Accepted SHA-256: `89BEA84FD68A22E327090C1E4E4533F5BCD745ADCA61EB4E66172EE9023BB910`
+- Total records: **876** (811 baseline + 65 Batch 4: January, February, March 2024)
+- Unique projects: **876**
 - Missing project codes: **0**
 - Duplicate keys: **0**
-- Serial continuity: **100% continuous** within each month (FY 2023-24 cumulative ledger serial ranges 1..20, 21..30, 31..84, 85..91, 92..106, 107..154, 155..183, 184..194; and 1..N thereafter)
-- Completed Projects test suite: `python -m unittest discover -s tests -p "*completed*" -v` (14 tests, OK)
+- Serial continuity: **100% continuous** within each month (FY 2023-24 cumulative ledger serial ranges 1..20, 21..30, 31..84, 85..91, 92..106, 107..154, 155..183, 184..194, 217..229, 230..249, 250..281; and 1..N thereafter)
+- Completed Projects test suite: `python -m unittest discover -s tests -p "*completed*" -v` (15 tests, OK)
 - Adapters supported:
-  1. `table2-completed-legacy-five-column-v1` (April through November 2023)
+  1. `table2-completed-legacy-five-column-v1` (April 2023 through March 2024: April–November 2023, January–March 2024)
   2. `table3-completed-legacy-six-column-v1` (June 2024–June 2025)
   3. `table3-completed-seven-column-v1` (September 2025–July 2026)
-- December 2023: Completed Projects absent (20-page executive summary only; cleanly returns 0 records)
+- December 2023: Completed Projects absent in standalone report (20-page executive summary only; cleanly returns 0 records; serials 195–216 appear in later cumulative ledger)
 - July & August 2025: Completed Projects absent (Table 3 is North-Eastern Ongoing Projects; cleanly returns 0 records)
-- Next planned Completed Projects task: Batch 4 (January, February, March 2024). Do not proceed until explicitly instructed.
+- Deferred: April & May 2024 (Table 2, 5-col legacy layout with bracketed codes; deferred for dedicated Table 2 adapter)
+- Next planned Completed Projects task: Deferred April & May 2024 Table 2 extraction (and/or December 2023 extraction from January 2024 ledger). Do not proceed until explicitly instructed.
 
 ## First health checks
 
@@ -210,7 +211,7 @@ Get-Content -Raw data/validation/combined_summary.json
 Get-Content -Raw data/validation/id_crosswalk_summary_june_july_2025.json
 ```
 
-Expected test result: **111 tests, OK**.
+Expected test result: **126 tests, OK** (111 ongoing + 15 completed).
 
 Expected combined SHA-256:
 
