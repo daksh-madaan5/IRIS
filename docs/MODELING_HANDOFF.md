@@ -1,8 +1,8 @@
 # PAIMANA Modeling Handoff
 
 **Updated**: 2026-08-30
-**Version**: 1.9 (Deterministic Locked-Model Explainability Complete)
-**Phase**: Model-family selections remain closed (Legacy PREFER_CATBOOST, Modern KEEP_LOGISTIC). Calibration and operational-policy evaluation remains unchanged. The first deterministic predictive-explanation layer is complete; no dashboard, generated narratives, counterfactuals, new target, model family, or threshold selection was added.
+**Version**: 2.0 (Deterministic Model-Serving Layer Complete)
+**Phase**: Model-family selections remain closed (Legacy PREFER_CATBOOST, Modern KEEP_LOGISTIC). Calibration, operational-policy evaluation, and explanation semantics remain unchanged. The first deterministic serving/API layer is complete; no dashboard, generated narratives, LLM, counterfactuals, new target, model family, or threshold selection was added.
 
 ---
 
@@ -1037,3 +1037,74 @@ for the already documented calibration-policy stability step.
 ---
 
 *Flagship H=3 model families, target, calibration policy, and canonical inputs remain unchanged. The first deterministic predictive-explanation layer is complete.*
+
+## 14. Deterministic Model-Serving Layer Completed
+
+Implementation:
+
+- `src/serving/builder.py`: hash-validated compact SQLite artifact builder;
+- `src/serving/repository.py`: short-lived read-only indexed queries;
+- `src/serving/schemas.py`: strict response models with extra fields forbidden;
+- `src/serving/api.py`: FastAPI health, monthly ranking, project-month, exact-ID
+  history, and monthly summary endpoints.
+
+Contract: `docs/serving_contract.md`
+
+Tests: `tests/test_serving_api.py`
+
+Generated untracked results: `data/serving/`
+
+The serving artifact is derived only from the accepted `risk_rankings.csv`,
+`top_contributors.csv`, and `explainability_manifest.json`. Source hashes are
+validated before construction. The builder never reads the 996,894-row complete
+local explanation vector, refits a model, recalibrates a score, or recomputes a
+rank. The complete vector remains offline and authoritative for audit.
+
+`iris_risk_serving_v1.sqlite3` contains **25,189** project-month rows and
+**250,570** configured source-level contributor rows: 16,999 Legacy and 8,190
+Modern project-months. Exactly 1,625 records have active temporal calibration,
+all in Modern 2026-04. The API copies `ranking_probability` as
+`risk_probability`; raw model probability remains separately available.
+
+The full risk record includes literal source `project_code`, month, regime,
+target name, locked model identity, raw and operational probabilities,
+calibration state, accepted rank/percentile/population, deterministic positive and
+negative contributors, relevant at-T source-feature values, and version metadata.
+Contributor wording and schema remain explicitly predictive rather than causal.
+Missing values serialize as JSON null.
+
+History is exact-source-code only and chronological. Tests exercise a real
+June-July analytical crosswalk proposal (`N06000087` / `400160`) and verify that
+neither code's endpoint returns the other's records. Crosswalk data, completion
+metadata, realized target labels/evidence, project names, and provenance are not
+read or served. Project disappearance creates no inferred history or completion
+state.
+
+FastAPI dependencies were added to `requirements.txt`. Build and run with the
+recorded Python 3.11 ML environment:
+
+```powershell
+D:\AppInstall\python.exe -m src.serving.builder --root .
+D:\AppInstall\python.exe -m uvicorn src.serving.api:app --host 127.0.0.1 --port 8000
+```
+
+Ten serving regressions cover exact locked probability/rank/percentile copying,
+deterministic contributor ordering and artifact rebuilding, leakage exclusion,
+exact-ID history, cross-regime non-crosswalk behavior, safe missing-value JSON,
+pagination/filtering/summary behavior, clean 404/422 responses, health, and
+canonical hash protection. The final full-suite and post-run hash verification
+are recorded in the handoff completion state below.
+
+### Serving completion verification
+
+- **Full regression suite**: **212/212 passing**.
+- **Canonical hashes remain unchanged**:
+  - `projects_monthly.csv`: `9512A9881E17DFDED6E182D87A8DFB1C4EDBD36C0D9B8A7DA9FD1ABB7E002FBF`
+  - `projects_completed.csv`: `89BEA84FD68A22E327090C1E4E4533F5BCD745ADCA61EB4E66172EE9023BB910`
+
+STOP boundary reached: the deterministic serving/API layer is complete. No
+frontend/dashboard or language-model narrative layer has been started.
+
+---
+
+*Flagship H=3 model families, target, calibration policy, explanation semantics, and canonical inputs remain unchanged. The first deterministic serving layer is complete.*

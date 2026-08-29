@@ -12,6 +12,7 @@ data/extracted/
 data/cleaned/
 data/processed/
 data/validation/
+data/serving/
 *.parquet
 
 .env
