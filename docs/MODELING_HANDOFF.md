@@ -1,8 +1,8 @@
 # PAIMANA Modeling Handoff
 
 **Updated**: 2026-08-29  
-**Version**: 1.3 (Walk-Forward Baselines Evaluated)  
-**Phase**: Flagship H=3 baseline evaluation complete — advanced models and production modeling not begun.
+**Version**: 1.4 (Baseline Robustness Audit Completed)  
+**Phase**: Flagship H=3 baseline evaluation and robustness diagnostics complete — advanced models and production modeling not begun.
 
 ---
 
@@ -83,8 +83,10 @@ suite adds 13 dataset-builder tests; see Section 5 for the final result.
 | [`docs/MODELING_HANDOFF.md`](file:///d:/coding/PAIMANA/docs/MODELING_HANDOFF.md) | Updated | Comprehensive handoff reflecting post-correction design state |
 | [`src/ml/dataset_builder.py`](file:///d:/coding/PAIMANA/src/ml/dataset_builder.py) | Added | Conservative H=3 target and leakage-safe at-T feature construction |
 | [`src/ml/evaluate_baselines.py`](file:///d:/coding/PAIMANA/src/ml/evaluate_baselines.py) | Added | Regime-separated strict-embargo walk-forward baseline evaluation |
+| [`src/ml/robustness_audit.py`](file:///d:/coding/PAIMANA/src/ml/robustness_audit.py) | Added | Fold stability, aggregation, cluster uncertainty, ablation, and calibration diagnostics |
 | [`tests/test_ml_dataset_builder.py`](file:///d:/coding/PAIMANA/tests/test_ml_dataset_builder.py) | Added | Builder semantics and generated-data regression tests |
 | [`tests/test_ml_evaluate_baselines.py`](file:///d:/coding/PAIMANA/tests/test_ml_evaluate_baselines.py) | Added | Embargo, preprocessing, leakage, regime, determinism, lagged-rule, and output tests |
+| [`tests/test_ml_robustness_audit.py`](file:///d:/coding/PAIMANA/tests/test_ml_robustness_audit.py) | Added | Feature partition, clustered bootstrap, aggregation, ablation-fold, output, and hash tests |
 
 ---
 
@@ -298,12 +300,137 @@ Post-evaluation hashes remain:
 - `projects_monthly.csv`: `9512A9881E17DFDED6E182D87A8DFB1C4EDBD36C0D9B8A7DA9FD1ABB7E002FBF`
 - `projects_completed.csv`: `89BEA84FD68A22E327090C1E4E4533F5BCD745ADCA61EB4E66172EE9023BB910`
 
-**Exact next step, only after explicit approval:** investigate the Legacy February
-2025 fold and calibration drift, then design a training-only threshold/class-weight
-comparison and optionally a one-hot Logistic ablation. Do not proceed to tree,
-boosting, neural, or pooled production models until those baseline stability issues
-are understood.
+That baseline-stability investigation is now complete and documented in Section 7.
+
+## 7. Baseline Robustness and Diagnostic Audit Completed
+
+Implementation: `src/ml/robustness_audit.py`  
+Generated results: `data/ml/schedule_extension_3m/evaluation/robustness/`  
+Human-readable diagnostic: `robustness_report.md`
+
+The audit reuses all 17 accepted walk-forward origins, their strict embargo, the
+same unweighted L2 Logistic configuration, and fold-local preprocessing. Full-v1
+probabilities reconcile with the accepted evaluation to machine precision. Labels
+were not rebuilt, no defect was found, and no advanced model was implemented.
+
+### Fold stability and February 2025
+
+The complete fold table is in `fold_stability.csv`. Performance is materially
+time-varying. Legacy Logistic AP ranges from 0.0341 to 0.8058; Modern ranges from
+0.5678 to 0.8151. Early Modern folds also contain substantial exact categorical
+novelty (30.4%–39.9% of sector/agency/state cells unseen in training), falling to
+0.6% by April 2026.
+
+Legacy February 2025 has 983 rows and only 43 positives (4.37%), versus 135/1,109
+(12.17%) in January and 156/1,446 (10.79%) in March. Its Logistic AP/ROC are
+0.0341/0.3919. Observed diagnostic differences are:
+
+- all 43 positives are `FIRST_REVISION_FROM_UNREVISED_BASELINE`; there are no
+  subsequent-revision positives, versus 79.3% subsequent in January and 85.3% in
+  March;
+- `revised_date_is_present` and `n_prior_schedule_extensions` are both zero for
+  every eligible February row, versus revised-date presence of 9.65% in January
+  and 34.85% in March;
+- physical-progress and expenditure-delta support rates remain close to adjacent
+  folds; the exact categorical unseen-cell rate is only 0.20%;
+- sector total-variation distances are 0.030 (Jan→Feb) and 0.069 (Feb→Mar), while
+  agency distances are 0.062 and 0.148.
+
+These are observed reporting-state, target-composition, and distribution shifts;
+the audit makes no causal claim. The accepted target semantics remain internally
+reproducible, but this fold prevents treating the pooled result as temporally
+stable.
+
+### Micro, macro, and weighted metrics
+
+| Regime | Metric | Concatenated OOF (micro) | Macro fold mean | Evaluation-row-weighted fold mean |
+|---|---|---:|---:|---:|
+| Legacy | AP | 0.2906 | 0.3904 | 0.3670 |
+| Legacy | ROC-AUC | 0.7360 | 0.7435 | 0.7434 |
+| Legacy | Brier | 0.0838 | 0.0813 | 0.0838 |
+| Modern | AP | 0.7091 | 0.7221 | 0.7307 |
+| Modern | ROC-AUC | 0.8072 | 0.8041 | 0.8113 |
+| Modern | Brier | 0.2111 | 0.2122 | 0.2111 |
+
+Concatenated AP/ROC pools score rankings from different fitted models and training
+prevalences. It is an out-of-fold operational summary, not a single-model test
+metric. Macro weights each origin equally; row-weighted metrics weight origins by
+evaluation population. Micro and row-weighted Brier reconcile because Brier is
+row-decomposable; AP and ROC generally do not.
+
+### Cluster-aware confidence intervals
+
+The robustness audit replaces independent-row bootstrap as the sole uncertainty
+statement with 1,000 deterministic project-cluster resamples. Each sampled
+`project_code` retains all of its out-of-fold observations. Evaluation-month block
+resampling is also reported as a sensitivity analysis.
+
+| Regime | Metric | Point | 95% project-cluster CI | Month-block sensitivity CI |
+|---|---|---:|---:|---:|
+| Legacy | AP | 0.2906 | 0.2440–0.3405 | 0.2470–0.3815 |
+| Legacy | ROC-AUC | 0.7360 | 0.7107–0.7603 | 0.7111–0.7769 |
+| Legacy | Brier | 0.0838 | 0.0787–0.0892 | 0.0723–0.0964 |
+| Modern | AP | 0.7091 | 0.6835–0.7345 | 0.6196–0.7896 |
+| Modern | ROC-AUC | 0.8072 | 0.7937–0.8205 | 0.7375–0.8515 |
+| Modern | Brier | 0.2111 | 0.2027–0.2191 | 0.1952–0.2283 |
+
+Modern month-block intervals are sensitivity-only because just five evaluation
+months are available.
+
+### Feature ablation and categorical dependence
+
+| Regime | Logistic inputs | AP | ROC-AUC | Brier | ECE |
+|---|---|---:|---:|---:|---:|
+| Legacy | Static at T | 0.1960 | 0.7305 | 0.0830 | 0.0287 |
+| Legacy | Trajectory only | 0.2936 | 0.6961 | 0.0884 | 0.0753 |
+| Legacy | Full v1 | 0.2906 | 0.7360 | 0.0838 | 0.0529 |
+| Legacy | Numeric-only full v1 | 0.2890 | 0.7398 | 0.0819 | 0.0458 |
+| Modern | Static at T | 0.7587 | 0.8419 | 0.1916 | 0.1405 |
+| Modern | Trajectory only | 0.6174 | 0.7137 | 0.3003 | 0.2741 |
+| Modern | Full v1 | 0.7091 | 0.8072 | 0.2111 | 0.1664 |
+| Modern | Numeric-only full v1 | 0.6983 | 0.8004 | 0.2239 | 0.1909 |
+
+Historical trajectories add substantial Legacy AP versus static-only, but the
+full set does not exceed trajectory-only AP. In Modern, static-at-T is clearly
+stronger than trajectory-only or full v1. Removing sector/agency/state barely
+changes Legacy AP and reduces Modern AP by only 0.0108 versus full v1; categorical
+memorisation therefore does not dominate either pooled result.
+
+### Calibration and threshold-free interpretation
+
+Legacy mean probability is 0.1473 against a 0.0945 event rate (ECE 0.0529; Brier
+0.0838), a pooled overprediction pattern. Modern mean probability is 0.2986
+against a 0.4493 event rate (ECE 0.1664; Brier 0.2111). Every Modern fold
+underpredicts on average, with predicted-minus-observed ranging from −0.042 to
+−0.215. Modern's ECE therefore reflects systematic underprediction whose magnitude
+also drifts by fold; in deciles 1–9 observed rates exceed mean scores, while the
+top decile modestly overpredicts.
+
+AP remains primary. Pooled precision-recall anchors are descriptive only: at about
+50% recall, precision is 0.236 Legacy and 0.751 Modern; at about 80% recall, it is
+0.145 and 0.690. No operational threshold was selected and no calibration was fit.
+
+### Tests, hashes, and exact next step
+
+Seven robustness tests cover exact manifest feature order, deterministic
+project-cluster bootstrap, explicit aggregation semantics, identical ablation
+fold populations, both cluster methods, accepted-score reconciliation, and
+canonical hash immutability. Final full-suite status is **157/157 passing**.
+
+Canonical hashes remain unchanged:
+
+- `projects_monthly.csv`: `9512A9881E17DFDED6E182D87A8DFB1C4EDBD36C0D9B8A7DA9FD1ABB7E002FBF`
+- `projects_completed.csv`: `89BEA84FD68A22E327090C1E4E4533F5BCD745ADCA61EB4E66172EE9023BB910`
+
+**Exact next model stage, only after explicit approval:** remain regime-separated
+and Logistic-first. Run a pre-specified training-fold-only one-hot encoding
+comparison and a transparent unweighted-versus-balanced Logistic comparison, with
+any threshold selected solely from training/validation history. Carry Legacy
+trajectory/full-v1 and Modern static-at-T as distinct candidate specifications.
+Do not calibrate or advance to tree, boosting, neural, or pooled production models
+until the February reporting-state discontinuity, Modern categorical novelty, and
+fold-specific calibration drift are incorporated into the validation plan.
 
 ---
 
-*Flagship H=3 dataset construction complete. No models trained. Both canonical datasets preserved unchanged.*
+*Flagship H=3 dataset construction, baseline evaluation, and robustness audit complete. No advanced model trained. Both canonical datasets preserved unchanged.*
