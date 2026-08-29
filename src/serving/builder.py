@@ -20,8 +20,8 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-SERVING_ARTIFACT_VERSION = "iris_serving_v1"
-SERVING_CONTRACT_VERSION = "1.0"
+SERVING_ARTIFACT_VERSION = "iris_serving_v1_1"
+SERVING_CONTRACT_VERSION = "1.1"
 TARGET = "target_effective_schedule_ext_3m"
 DATABASE_NAME = "iris_risk_serving_v1.sqlite3"
 MANIFEST_NAME = "serving_manifest.json"
@@ -60,6 +60,14 @@ TOP_REQUIRED_FIELDS = {
     "configured_direction_limit",
     "contribution_space",
 }
+
+DISPLAY_METADATA_FIELDS = (
+    "project_name",
+    "agency",
+    "ministry",
+    "sector",
+    "state",
+)
 
 DISPLAY_NAMES = {
     "sector": "Sector",
@@ -159,6 +167,36 @@ def _validate_source_hashes(
     return hashes
 
 
+def _load_display_metadata(
+    root: Path, explanation_manifest: dict[str, Any]
+) -> tuple[dict[tuple[str, str], dict[str, str | None]], str]:
+    """Load exact project-month display labels from the immutable canonical panel."""
+
+    path = root / "data/processed/projects_monthly.csv"
+    actual_hash = sha256(path)
+    expected_hash = explanation_manifest["canonical_hashes"]["projects_monthly.csv"].upper()
+    if actual_hash != expected_hash:
+        raise RuntimeError(
+            "Canonical project metadata hash mismatch: "
+            f"expected {expected_hash}, got {actual_hash}"
+        )
+    fields, rows = _read_csv(path)
+    required = {"project_code", "report_month", *DISPLAY_METADATA_FIELDS}
+    if not required.issubset(fields):
+        raise RuntimeError(
+            f"Canonical metadata schema mismatch: missing {sorted(required - set(fields))}"
+        )
+    metadata: dict[tuple[str, str], dict[str, str | None]] = {}
+    for row in rows:
+        key = (row["project_code"], row["report_month"])
+        if key in metadata:
+            raise RuntimeError(f"Duplicate canonical project-month metadata key: {key}")
+        metadata[key] = {
+            field: _optional_text(row[field]) for field in DISPLAY_METADATA_FIELDS
+        }
+    return metadata, actual_hash
+
+
 def _create_schema(connection: sqlite3.Connection) -> None:
     connection.executescript(
         """
@@ -169,6 +207,11 @@ def _create_schema(connection: sqlite3.Connection) -> None:
             id INTEGER PRIMARY KEY,
             project_code TEXT NOT NULL,
             report_month TEXT NOT NULL,
+            project_name TEXT,
+            agency TEXT,
+            ministry TEXT,
+            sector TEXT,
+            state TEXT,
             regime TEXT NOT NULL CHECK (regime IN ('LEGACY', 'MODERN')),
             target TEXT NOT NULL,
             model_id TEXT NOT NULL,
@@ -206,6 +249,8 @@ def _create_schema(connection: sqlite3.Connection) -> None:
             ON risk_records(report_month, regime, risk_rank, project_code);
         CREATE INDEX risk_project_history_idx
             ON risk_records(project_code, report_month, regime);
+        CREATE INDEX risk_month_metadata_idx
+            ON risk_records(report_month, sector, agency, ministry, state);
         """
     )
 
@@ -231,6 +276,9 @@ def build(root: Path, output_dir: Path | None = None) -> dict[str, Any]:
         raise RuntimeError("Explainability manifest does not attest immutable canonical inputs")
     source_hashes = _validate_source_hashes(explanation_dir, explanation_manifest)
     explanation_manifest_hash = sha256(explanation_manifest_path)
+    display_metadata, canonical_monthly_hash = _load_display_metadata(
+        root, explanation_manifest
+    )
 
     if temporary_path.exists():
         temporary_path.unlink()
@@ -292,18 +340,31 @@ def build(root: Path, output_dir: Path | None = None) -> dict[str, Any]:
             regime = row["regime"]
             if explanation_manifest["locked_models"].get(regime) != row["model_identifier"]:
                 raise RuntimeError(f"Locked model mismatch for {key}")
+            metadata_key = (row["project_code"], row["report_month"])
+            if metadata_key not in display_metadata:
+                raise RuntimeError(
+                    f"Serving record has no exact canonical metadata match: {metadata_key}"
+                )
+            labels = display_metadata[metadata_key]
             cursor = connection.execute(
                 """
                 INSERT INTO risk_records (
-                    project_code, report_month, regime, target, model_id,
+                    project_code, report_month,
+                    project_name, agency, ministry, sector, state,
+                    regime, target, model_id,
                     raw_probability, risk_probability, calibration_active,
                     risk_percentile, risk_rank, population_size,
                     raw_decision_score, explanation_method, contribution_space
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     row["project_code"],
                     row["report_month"],
+                    labels["project_name"],
+                    labels["agency"],
+                    labels["ministry"],
+                    labels["sector"],
+                    labels["state"],
                     regime,
                     TARGET,
                     row["model_identifier"],
@@ -410,6 +471,7 @@ def build(root: Path, output_dir: Path | None = None) -> dict[str, Any]:
             "explanation_manifest_sha256": explanation_manifest_hash,
             "risk_rankings_sha256": source_hashes["risk_rankings.csv"],
             "top_contributors_sha256": source_hashes["top_contributors.csv"],
+            "projects_monthly_sha256": canonical_monthly_hash,
         }
         connection.executemany(
             "INSERT INTO artifact_metadata(key, value) VALUES (?, ?)",
@@ -458,6 +520,10 @@ def build(root: Path, output_dir: Path | None = None) -> dict[str, Any]:
                 "path": str((explanation_dir / "top_contributors.csv").relative_to(root)),
                 "sha256": source_hashes["top_contributors.csv"],
             },
+            "projects_monthly.csv": {
+                "path": "data/processed/projects_monthly.csv",
+                "sha256": canonical_monthly_hash,
+            },
         },
         "locked_models": explanation_manifest["locked_models"],
         "explanation_version": explanation_manifest["explainability_name"],
@@ -475,7 +541,10 @@ def build(root: Path, output_dir: Path | None = None) -> dict[str, Any]:
             "complete_local_explanations_read": False,
             "future_target_values_included": False,
             "completed_project_metadata_included": False,
-            "project_name_included": False,
+            "display_metadata_included": list(DISPLAY_METADATA_FIELDS),
+            "project_name_included": True,
+            "project_name_used_as_model_feature": False,
+            "display_metadata_exact_key_match": True,
             "crosswalk_used": False,
             "records_without_contributors": records_without_contributors,
             "source_hashes_match_explainability_manifest": True,

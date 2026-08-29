@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException, Query
 
 from src.serving.repository import ServingRepository, score_distribution
 from src.serving.schemas import (
+    DashboardOptionsResponse,
     HealthResponse,
     HistoryResponse,
     ProjectListResponse,
@@ -48,7 +49,7 @@ def create_app(
 
     app = FastAPI(
         title="IRIS deterministic risk service",
-        version="1.0.0",
+        version="1.1.0",
         description=(
             "Read-only access to locked IRIS project-month scores and predictive "
             "contributors. Contributions are predictive, not causal."
@@ -67,6 +68,11 @@ def create_app(
         regime: Regime | None = None,
         min_risk_probability: Annotated[float | None, Query(ge=0.0, le=1.0)] = None,
         max_risk_probability: Annotated[float | None, Query(ge=0.0, le=1.0)] = None,
+        sector: str | None = None,
+        agency: str | None = None,
+        ministry: str | None = None,
+        state: str | None = None,
+        search: Annotated[str | None, Query(max_length=200)] = None,
     ) -> dict[str, Any]:
         month = _month(report_month)
         if (
@@ -83,6 +89,11 @@ def create_app(
             regime=regime,
             min_probability=min_risk_probability,
             max_probability=max_risk_probability,
+            sector=sector,
+            agency=agency,
+            ministry=ministry,
+            state=state,
+            search=search.strip() if search and search.strip() else None,
             limit=page_size,
             offset=(page - 1) * page_size,
         )
@@ -94,12 +105,29 @@ def create_app(
                 "regime": regime,
                 "min_risk_probability": min_risk_probability,
                 "max_risk_probability": max_risk_probability,
+                "sector": sector,
+                "agency": agency,
+                "ministry": ministry,
+                "state": state,
+                "search": search.strip() if search and search.strip() else None,
             },
             "page": page,
             "page_size": page_size,
             "total": total,
             "items": items,
         }
+
+    @app.get("/risk/options", response_model=DashboardOptionsResponse)
+    def options(
+        report_month: Annotated[
+            str | None, Query(description="Optional evaluation month as YYYY-MM")
+        ] = None,
+    ) -> dict[str, Any]:
+        month = _month(report_month) if report_month is not None else None
+        try:
+            return store().dashboard_options(month)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.get("/risk/project/{project_code}", response_model=RiskRecord)
     def project(
@@ -128,9 +156,23 @@ def create_app(
         report_month: Annotated[str, Query(description="Evaluation month as YYYY-MM")],
         regime: Regime | None = None,
         top_n: Annotated[int, Query(ge=1, le=50)] = 10,
+        sector: str | None = None,
+        agency: str | None = None,
+        ministry: str | None = None,
+        state: str | None = None,
+        search: Annotated[str | None, Query(max_length=200)] = None,
     ) -> dict[str, Any]:
         month = _month(report_month)
-        rows = store().month_scores(month, regime)
+        normalized_search = search.strip() if search and search.strip() else None
+        rows = store().month_scores(
+            month,
+            regime,
+            sector=sector,
+            agency=agency,
+            ministry=ministry,
+            state=state,
+            search=normalized_search,
+        )
         if not rows:
             raise HTTPException(status_code=404, detail="Risk summary population not found")
         regimes: dict[str, dict[str, Any]] = {}
@@ -151,6 +193,11 @@ def create_app(
         top = [
             {
                 "project_code": row["project_code"],
+                "project_name": row["project_name"],
+                "agency": row["agency"],
+                "ministry": row["ministry"],
+                "sector": row["sector"],
+                "state": row["state"],
                 "regime": row["regime"],
                 "model_id": row["model_id"],
                 "raw_probability": float(row["raw_probability"]),
@@ -165,12 +212,23 @@ def create_app(
         return {
             "report_month": month,
             "regime_filter": regime,
+            "filters": {
+                "regime": regime,
+                "min_risk_probability": None,
+                "max_risk_probability": None,
+                "sector": sector,
+                "agency": agency,
+                "ministry": ministry,
+                "state": state,
+                "search": normalized_search,
+            },
             "project_count": len(rows),
             "score_distribution": score_distribution(
                 [float(row["risk_probability"]) for row in rows]
             ),
             "top_risk_projects": top,
             "regimes": [regimes[key] for key in sorted(regimes)],
+            "sector_summary": store().sector_summary(rows),
         }
 
     return app

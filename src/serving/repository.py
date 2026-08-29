@@ -16,6 +16,11 @@ RECORD_COLUMNS = (
     "id",
     "project_code",
     "report_month",
+    "project_name",
+    "agency",
+    "ministry",
+    "sector",
+    "state",
     "regime",
     "target",
     "model_id",
@@ -70,6 +75,11 @@ class ServingRepository:
         regime: str | None = None,
         min_probability: float | None = None,
         max_probability: float | None = None,
+        sector: str | None = None,
+        agency: str | None = None,
+        ministry: str | None = None,
+        state: str | None = None,
+        search: str | None = None,
     ) -> tuple[str, list[Any]]:
         clauses: list[str] = []
         values: list[Any] = []
@@ -77,6 +87,10 @@ class ServingRepository:
             ("report_month = ?", report_month),
             ("project_code = ?", project_code),
             ("regime = ?", regime),
+            ("sector = ?", sector),
+            ("agency = ?", agency),
+            ("ministry = ?", ministry),
+            ("state = ?", state),
         ):
             if value is not None:
                 clauses.append(clause)
@@ -87,6 +101,13 @@ class ServingRepository:
         if max_probability is not None:
             clauses.append("risk_probability <= ?")
             values.append(max_probability)
+        if search:
+            clauses.append(
+                "(project_code LIKE ? ESCAPE '\\' COLLATE NOCASE OR "
+                "project_name LIKE ? ESCAPE '\\' COLLATE NOCASE)"
+            )
+            escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            values.extend([f"%{escaped}%", f"%{escaped}%"])
         return (" WHERE " + " AND ".join(clauses) if clauses else ""), values
 
     def list_records(
@@ -96,6 +117,11 @@ class ServingRepository:
         regime: str | None,
         min_probability: float | None,
         max_probability: float | None,
+        sector: str | None,
+        agency: str | None,
+        ministry: str | None,
+        state: str | None,
+        search: str | None,
         limit: int,
         offset: int,
     ) -> tuple[int, list[dict[str, Any]]]:
@@ -104,6 +130,11 @@ class ServingRepository:
             regime=regime,
             min_probability=min_probability,
             max_probability=max_probability,
+            sector=sector,
+            agency=agency,
+            ministry=ministry,
+            state=state,
+            search=search,
         )
         with closing(self._connect()) as connection:
             total = int(
@@ -149,17 +180,95 @@ class ServingRepository:
             return self._hydrate(connection, rows)
 
     def month_scores(
-        self, report_month: str, regime: str | None
+        self,
+        report_month: str,
+        regime: str | None,
+        *,
+        sector: str | None = None,
+        agency: str | None = None,
+        ministry: str | None = None,
+        state: str | None = None,
+        search: str | None = None,
     ) -> list[sqlite3.Row]:
-        where, values = self._where(report_month=report_month, regime=regime)
+        where, values = self._where(
+            report_month=report_month,
+            regime=regime,
+            sector=sector,
+            agency=agency,
+            ministry=ministry,
+            state=state,
+            search=search,
+        )
         with closing(self._connect()) as connection:
             return connection.execute(
-                "SELECT project_code, regime, model_id, raw_probability, "
+                "SELECT project_code, project_name, agency, ministry, sector, state, "
+                "regime, model_id, raw_probability, "
                 "risk_probability, calibration_active, risk_rank, risk_percentile, "
                 f"population_size FROM risk_records{where} "
                 "ORDER BY risk_rank, project_code",
                 values,
             ).fetchall()
+
+    def dashboard_options(self, report_month: str | None = None) -> dict[str, Any]:
+        with closing(self._connect()) as connection:
+            months = [
+                row[0]
+                for row in connection.execute(
+                    "SELECT DISTINCT report_month FROM risk_records ORDER BY report_month"
+                ).fetchall()
+            ]
+            selected = report_month or months[-1]
+            if selected not in months:
+                raise ValueError("Risk option population not found")
+
+            def values(field: str) -> list[str]:
+                return [
+                    row[0]
+                    for row in connection.execute(
+                        f"SELECT DISTINCT {field} FROM risk_records "
+                        f"WHERE report_month = ? AND {field} IS NOT NULL "
+                        f"ORDER BY {field} COLLATE NOCASE, {field}",
+                        (selected,),
+                    ).fetchall()
+                ]
+
+            regimes = [
+                row[0]
+                for row in connection.execute(
+                    "SELECT DISTINCT regime FROM risk_records "
+                    "WHERE report_month = ? ORDER BY regime",
+                    (selected,),
+                ).fetchall()
+            ]
+            return {
+                "report_months": months,
+                "default_report_month": months[-1],
+                "selected_report_month": selected,
+                "regimes": regimes,
+                "sectors": values("sector"),
+                "agencies": values("agency"),
+                "ministries": values("ministry"),
+                "states": values("state"),
+            }
+
+    @staticmethod
+    def sector_summary(rows: Sequence[sqlite3.Row]) -> list[dict[str, Any]]:
+        grouped: dict[str | None, list[float]] = {}
+        for row in rows:
+            grouped.setdefault(row["sector"], []).append(float(row["risk_probability"]))
+        result = [
+            {
+                "sector": sector,
+                "project_count": len(values),
+                "mean_risk_probability": math.fsum(values) / len(values),
+                "highest_risk_probability": max(values),
+            }
+            for sector, values in grouped.items()
+        ]
+        return sorted(
+            result,
+            key=lambda item: (-item["mean_risk_probability"], item["sector"] or ""),
+        )
 
     def _hydrate(
         self, connection: sqlite3.Connection, rows: Sequence[sqlite3.Row]
@@ -208,6 +317,11 @@ class ServingRepository:
                 {
                     "project_code": row["project_code"],
                     "report_month": row["report_month"],
+                    "project_name": row["project_name"],
+                    "agency": row["agency"],
+                    "ministry": row["ministry"],
+                    "sector": row["sector"],
+                    "state": row["state"],
                     "regime": row["regime"],
                     "target": row["target"],
                     "model_id": row["model_id"],

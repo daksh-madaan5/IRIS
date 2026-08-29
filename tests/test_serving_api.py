@@ -39,6 +39,10 @@ class ServingApiTests(unittest.TestCase):
             (row["project_code"], row["report_month"]): row for row in cls.rankings
         }
         cls.top_rows = read_csv(EXPLANATION_DIR / "top_contributors.csv")
+        cls.canonical = read_csv(ROOT / "data/processed/projects_monthly.csv")
+        cls.canonical_index = {
+            (row["project_code"], row["report_month"]): row for row in cls.canonical
+        }
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -55,6 +59,10 @@ class ServingApiTests(unittest.TestCase):
         self.assertEqual(rebuilt["database"]["sha256"], first_hash)
         self.assertFalse(rebuilt["validation"]["complete_local_explanations_read"])
         self.assertFalse(rebuilt["validation"]["risk_recomputed"])
+        self.assertEqual(rebuilt["serving_contract_version"], "1.1")
+        self.assertTrue(rebuilt["validation"]["project_name_included"])
+        self.assertFalse(rebuilt["validation"]["project_name_used_as_model_feature"])
+        self.assertTrue(rebuilt["validation"]["display_metadata_exact_key_match"])
 
     def test_api_probabilities_ranks_and_percentiles_match_locked_artifacts(self) -> None:
         # Modern 2026-04 is the single active temporal-Platt fold.
@@ -126,11 +134,34 @@ class ServingApiTests(unittest.TestCase):
             "target_event_revised_completion_date",
             "target_window_end_month",
             "extension_type",
-            "project_name",
             "source_file",
             "source_page",
         ):
             self.assertNotIn(f'"{prohibited}"', serialized)
+
+    def test_display_metadata_matches_exact_canonical_project_month(self) -> None:
+        response = self.client.get(
+            "/risk/project/617936", params={"report_month": "2026-04"}
+        )
+        self.assertEqual(response.status_code, 200)
+        record = response.json()
+        canonical = self.canonical_index[("617936", "2026-04")]
+        for field in ("project_name", "agency", "ministry", "sector", "state"):
+            self.assertEqual(record[field], canonical[field] or None)
+        self.assertNotIn("project_name", record["source_feature_values"])
+
+    def test_missing_display_metadata_remains_json_null(self) -> None:
+        missing_state = next(
+            row
+            for row in self.rankings
+            if not self.canonical_index[(row["project_code"], row["report_month"])]["state"]
+        )
+        response = self.client.get(
+            f"/risk/project/{missing_state['project_code']}",
+            params={"report_month": missing_state["report_month"]},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()["state"])
 
     def test_history_uses_exact_source_code_and_never_crosswalks_regimes(self) -> None:
         # This pair is an analytical June-July proposal. Each endpoint must stay
@@ -192,6 +223,35 @@ class ServingApiTests(unittest.TestCase):
         self.assertLessEqual(
             summary.json()["score_distribution"]["minimum"],
             summary.json()["score_distribution"]["maximum"],
+        )
+
+    def test_dashboard_options_and_metadata_filters_are_api_owned(self) -> None:
+        options = self.client.get(
+            "/risk/options", params={"report_month": "2026-04"}
+        )
+        self.assertEqual(options.status_code, 200)
+        payload = options.json()
+        self.assertEqual(payload["default_report_month"], "2026-04")
+        self.assertEqual(payload["selected_report_month"], "2026-04")
+        self.assertIn("Roads & Highways", payload["sectors"])
+        filtered = self.client.get(
+            "/risk/projects",
+            params={
+                "report_month": "2026-04",
+                "sector": "Roads & Highways",
+                "search": "617936",
+            },
+        )
+        self.assertEqual(filtered.status_code, 200)
+        self.assertEqual(filtered.json()["total"], 1)
+        self.assertEqual(filtered.json()["items"][0]["project_code"], "617936")
+        summary = self.client.get(
+            "/risk/summary",
+            params={"report_month": "2026-04", "sector": "Roads & Highways"},
+        )
+        self.assertEqual(summary.status_code, 200)
+        self.assertTrue(
+            all(row["sector"] == "Roads & Highways" for row in summary.json()["sector_summary"])
         )
 
     def test_unknown_project_and_month_return_clean_404(self) -> None:

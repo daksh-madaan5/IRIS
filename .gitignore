@@ -14,6 +14,9 @@ data/processed/
 data/validation/
 data/serving/
 *.parquet
+dashboard/node_modules/
+dashboard/dist/
+dashboard/*.tsbuildinfo
 
 .env
 *.log

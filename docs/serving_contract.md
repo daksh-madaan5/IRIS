@@ -1,8 +1,8 @@
 # IRIS Deterministic Model-Serving Contract
 
-**Version**: 1.0
+**Version**: 1.1
 
-**Serving artifact**: `iris_serving_v1`
+**Serving artifact**: `iris_serving_v1_1`
 
 **Target**: `target_effective_schedule_ext_3m`
 
@@ -18,8 +18,12 @@ label, infer completion, or resolve project identities.
 
 The only served target value is the target **name**
 `target_effective_schedule_ext_3m`. The realized future target label is never
-served. Completed-project fields, target-event evidence, project names, extraction
-provenance, and June-July crosswalk proposals are excluded.
+served. Completed-project fields, target-event evidence, extraction
+provenance, and June-July crosswalk proposals are excluded. Version 1.1 adds the
+ongoing-panel values `project_name`, `agency`, `ministry`, `sector`, and `state`
+as display-only metadata. They are copied by exact `(project_code, report_month)`
+key, preserve source spelling and missingness, and never enter a model feature,
+score, rank, calibration transform, or explanation.
 
 The strict machine schema is emitted by FastAPI at `GET /openapi.json` from the
 Pydantic models in `src/serving/schemas.py`. Those models reject extra response
@@ -56,7 +60,8 @@ objects set `additionalProperties` to `false`, except
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "project_code", "report_month", "regime", "target", "model_id",
+    "project_code", "report_month", "project_name", "agency", "ministry",
+    "sector", "state", "regime", "target", "model_id",
     "raw_probability", "risk_probability", "calibration_active",
     "risk_percentile", "risk_rank", "population_size",
     "top_positive_contributors", "top_negative_contributors",
@@ -65,6 +70,11 @@ objects set `additionalProperties` to `false`, except
   "properties": {
     "project_code": {"type": "string", "minLength": 1},
     "report_month": {"type": "string", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"},
+    "project_name": {"type": ["string", "null"]},
+    "agency": {"type": ["string", "null"]},
+    "ministry": {"type": ["string", "null"]},
+    "sector": {"type": ["string", "null"]},
+    "state": {"type": ["string", "null"]},
     "regime": {"enum": ["LEGACY", "MODERN"]},
     "target": {"const": "target_effective_schedule_ext_3m"},
     "model_id": {"type": "string", "minLength": 1},
@@ -111,8 +121,8 @@ objects set `additionalProperties` to `false`, except
         "explanation_method", "contribution_space", "ranking_score_type"
       ],
       "properties": {
-        "serving_contract_version": {"const": "1.0"},
-        "serving_artifact_version": {"const": "iris_serving_v1"},
+        "serving_contract_version": {"const": "1.1"},
+        "serving_artifact_version": {"const": "iris_serving_v1_1"},
         "explanation_version": {"const": "schedule_extension_3m_locked_models_explainability_v1"},
         "explanation_manifest_sha256": {"type": "string", "pattern": "^[A-F0-9]{64}$"},
         "model_id": {"type": "string"},
@@ -144,7 +154,7 @@ database is queryable:
 ```json
 {
   "status": "ok",
-  "serving_artifact_version": "iris_serving_v1",
+  "serving_artifact_version": "iris_serving_v1_1",
   "target": "target_effective_schedule_ext_3m",
   "project_month_records": 25189
 }
@@ -162,6 +172,10 @@ Query parameters:
 - `regime` is optional and is `LEGACY` or `MODERN`.
 - `min_risk_probability` and `max_risk_probability` are optional inclusive
   bounds in `[0, 1]`; minimum may not exceed maximum.
+- `sector`, `agency`, `ministry`, and `state` are optional exact-value display
+  metadata filters. Values are not normalized or rewritten.
+- `search` is an optional case-insensitive literal substring match over source
+  `project_code` and `project_name`. It does not resolve aliases or identities.
 
 The response is:
 
@@ -182,6 +196,15 @@ The response is:
 
 `items` contains full objects conforming to Section 3, not the illustrative
 string shown above. No matching month/filter population returns HTTP 404.
+
+### `GET /risk/options`
+
+Optional `report_month=YYYY-MM` selects the month whose exact filter values are
+returned. The response provides all served report months, the latest available
+default month, the selected month's regime values, and its distinct non-null
+source values for sector, agency, ministry, and state. Unknown months return
+HTTP 404. Null metadata stays null on risk records and is not turned into a
+synthetic filter label.
 
 ### `GET /risk/project/{project_code}?report_month=YYYY-MM`
 
@@ -208,13 +231,24 @@ interpreted as completion.
 
 ### `GET /risk/summary?report_month=YYYY-MM`
 
-Optional parameters are `regime=LEGACY|MODERN` and `top_n=1..50` (default 10).
+Optional parameters are `regime=LEGACY|MODERN`, `top_n=1..50` (default 10), and
+the same exact metadata/search filters accepted by `/risk/projects`.
 The response schema is:
 
 ```json
 {
   "report_month": "2026-04",
   "regime_filter": "MODERN",
+  "filters": {
+    "regime": "MODERN",
+    "min_risk_probability": null,
+    "max_risk_probability": null,
+    "sector": null,
+    "agency": null,
+    "ministry": null,
+    "state": null,
+    "search": null
+  },
   "project_count": 1625,
   "score_distribution": {
     "minimum": 0.0,
@@ -245,6 +279,14 @@ The response schema is:
       "model_id": "logistic_static_only__unweighted",
       "project_count": 1625,
       "calibration_active": true
+    }
+  ],
+  "sector_summary": [
+    {
+      "sector": "Roads & Highways",
+      "project_count": 100,
+      "mean_risk_probability": 0.0,
+      "highest_risk_probability": 0.0
     }
   ]
 }
@@ -280,8 +322,10 @@ Generated files are:
 - `data/serving/serving_manifest.json`: source hashes, database hash, locked
   identities, counts, and validation attestations.
 
-The builder reads only `risk_rankings.csv`, `top_contributors.csv`, and
-`explainability_manifest.json`. It validates source hashes before copying. It
+The builder reads locked risk content only from `risk_rankings.csv`,
+`top_contributors.csv`, and `explainability_manifest.json`. It additionally reads
+the hash-verified canonical ongoing panel solely to copy the five display metadata
+fields by exact key. It validates source hashes before copying. It
 does not read `local_explanations.csv`; that complete ~1M-row vector remains
 offline and authoritative for audit.
 
@@ -309,3 +353,5 @@ table into memory for each request.
 7. Absence from a later history month does not imply completion.
 8. Do not infer a threshold, alert, causal narrative, or action recommendation
    from this contract.
+9. Display metadata is not model input. Preserve it exactly, render missing values
+   as missing/not reported, and never use project name as an analytical feature.

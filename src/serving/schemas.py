@@ -37,6 +37,11 @@ class VersionMetadata(StrictModel):
 class RiskRecord(StrictModel):
     project_code: str
     report_month: str
+    project_name: str | None
+    agency: str | None
+    ministry: str | None
+    sector: str | None
+    state: str | None
     regime: Literal["LEGACY", "MODERN"]
     target: Literal["target_effective_schedule_ext_3m"]
     model_id: str
@@ -63,6 +68,11 @@ class ProjectFilters(StrictModel):
     regime: Literal["LEGACY", "MODERN"] | None
     min_risk_probability: float | None
     max_risk_probability: float | None
+    sector: str | None
+    agency: str | None
+    ministry: str | None
+    state: str | None
+    search: str | None
 
 
 class ProjectListResponse(StrictModel):
@@ -94,6 +104,11 @@ class ScoreDistribution(StrictModel):
 
 class TopRiskProject(StrictModel):
     project_code: str
+    project_name: str | None
+    agency: str | None
+    ministry: str | None
+    sector: str | None
+    state: str | None
     regime: Literal["LEGACY", "MODERN"]
     model_id: str
     raw_probability: float = Field(ge=0.0, le=1.0)
@@ -111,10 +126,30 @@ class RegimeMetadata(StrictModel):
     calibration_active: bool
 
 
+class SectorSummary(StrictModel):
+    sector: str | None
+    project_count: int = Field(ge=1)
+    mean_risk_probability: float = Field(ge=0.0, le=1.0)
+    highest_risk_probability: float = Field(ge=0.0, le=1.0)
+
+
+class DashboardOptionsResponse(StrictModel):
+    report_months: list[str]
+    default_report_month: str
+    selected_report_month: str
+    regimes: list[Literal["LEGACY", "MODERN"]]
+    sectors: list[str]
+    agencies: list[str]
+    ministries: list[str]
+    states: list[str]
+
+
 class SummaryResponse(StrictModel):
     report_month: str
     regime_filter: Literal["LEGACY", "MODERN"] | None
+    filters: ProjectFilters
     project_count: int = Field(ge=1)
     score_distribution: ScoreDistribution
     top_risk_projects: list[TopRiskProject]
     regimes: list[RegimeMetadata]
+    sector_summary: list[SectorSummary]
