@@ -86,11 +86,14 @@ class GeneratedQualityRegressionTests(unittest.TestCase):
         path = root / "data" / "validation" / "combined_summary.json"
         self.assertTrue(path.exists(), f"Run extraction first: missing {path}")
         summary = json.loads(path.read_text(encoding="utf-8"))
-        self.assertEqual(summary["rows"], 50187)
-        self.assertEqual(summary["unique_projects"], 4472)
+        self.assertEqual(summary["rows"], 55358)
+        self.assertEqual(summary["unique_projects"], 4574)
         self.assertEqual(
             summary["report_months"],
             [
+                "2023-07",
+                "2023-08",
+                "2023-09",
                 "2023-10",
                 "2023-11",
                 "2024-01",
@@ -107,13 +110,13 @@ class GeneratedQualityRegressionTests(unittest.TestCase):
                 *[f"2026-{month:02d}" for month in range(1, 8)],
             ],
         )
-        self.assertEqual(summary["projects_with_at_least_3_observations"], 4274)
-        self.assertEqual(summary["projects_with_at_least_6_observations"], 3844)
-        self.assertEqual(summary["projects_with_at_least_10_observations"], 2436)
-        self.assertEqual(summary["projects_with_at_least_12_observations"], 2254)
-        self.assertEqual(summary["projects_with_at_least_16_observations"], 1344)
-        self.assertEqual(summary["projects_with_at_least_18_observations"], 1166)
-        self.assertEqual(summary["projects_with_at_least_19_observations"], 0)
+        self.assertEqual(summary["projects_with_at_least_3_observations"], 4370)
+        self.assertEqual(summary["projects_with_at_least_6_observations"], 4013)
+        self.assertEqual(summary["projects_with_at_least_10_observations"], 2548)
+        self.assertEqual(summary["projects_with_at_least_12_observations"], 2367)
+        self.assertEqual(summary["projects_with_at_least_16_observations"], 1434)
+        self.assertEqual(summary["projects_with_at_least_18_observations"], 1285)
+        self.assertEqual(summary["projects_with_at_least_19_observations"], 1196)
         self.assertEqual(summary["projects_present_in_all_months"], 0)
         self.assertEqual(summary["duplicate_project_month_keys"], 0)
         self.assertEqual(summary["duplicate_project_month_rows"], 0)

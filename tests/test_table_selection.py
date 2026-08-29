@@ -269,6 +269,29 @@ class TableSelectionRegressionTests(unittest.TestCase):
                 self.assertEqual(len(selected[1]), 9)
                 self.assertIn("si.no", selected[1][0].lower())
 
+    def test_july_2023_footer_page_number_does_not_corrupt_bottom_date(self):
+        with pdfplumber.open(self.root / "data/raw/2023/FR_july1_2023.pdf") as pdf:
+            selected, _, _, _, _ = _locate_table6_candidate(pdf.pages[107], 108)
+        row = next(row for row in selected if row[0] == "13")
+        self.assertEqual(row[4], "9/2021")
+
+    def test_july_august_september_2023_select_by_milestones_signature(self):
+        cases = (
+            ("data/raw/2023/FR_july1_2023.pdf", 108),
+            ("data/raw/2023/FR_august_2023.pdf", 118),
+            ("data/raw/2023/FR_sept_2023.pdf", 89),
+        )
+        for path, page_number in cases:
+            with self.subTest(path=path):
+                with pdfplumber.open(self.root / path) as pdf:
+                    selected, _, _, audits, _ = _locate_table6_candidate(
+                        pdf.pages[page_number - 1], page_number
+                    )
+                matching = [audit for audit in audits if audit["matches_table6_signature"]]
+                self.assertEqual(len(matching), 1)
+                self.assertEqual(matching[0]["layout_version"], LEGACY_DETAIL_MILESTONES_LAYOUT)
+                self.assertEqual(len(selected[1]), 9)
+
     def test_detail_milestones_continuation_requires_established_header(self):
         with pdfplumber.open(self.root / "data/raw/2024/FR_jan_2024.pdf") as pdf:
             page = pdf.pages[96]  # Page 97 (continuation)

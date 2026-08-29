@@ -494,11 +494,36 @@ def _select_table6_candidate(
     return extracted[selected_index], selected_index, audits
 
 
+def _without_centered_footer_page_number(page: Any) -> Any:
+    """Exclude small centered footer glyphs that can overlap a bottom table row.
+
+    Some legacy reports extend the ruled project table through the footer. On
+    July 2023 page 108, the 8-point printed page number is geometrically
+    superimposed on a 9-point completion date. Filtering only the narrow footer
+    band and smaller font preserves the source table text and avoids merging
+    the footer digits into the reported cell value.
+    """
+    width = float(page.width)
+    height = float(page.height)
+
+    def keep(obj: dict[str, Any]) -> bool:
+        if obj.get("object_type") != "char":
+            return True
+        return not (
+            height - 50 <= float(obj.get("top", -1)) <= height
+            and width * 0.45 <= float(obj.get("x0", -1)) <= width * 0.55
+            and float(obj.get("size", 100)) <= 8.5
+        )
+
+    return page.filter(keep)
+
+
 def _locate_table6_candidate(
     page: Any, page_number: int, legacy_header_established: bool | str = False
 ) -> tuple[list[list[str | None]], int, str, list[dict[str, Any]], list[list[list[str | None]]]]:
     """Find the canonical table, retrying inside the page frame only after zero full-page matches."""
-    full_tables = page.find_tables(TABLE_SETTINGS)
+    detection_page = _without_centered_footer_page_number(page)
+    full_tables = detection_page.find_tables(TABLE_SETTINGS)
     full_extracted = [table.extract() for table in full_tables]
     try:
         table, selected_index, audits = _select_table6_candidate(
@@ -516,7 +541,7 @@ def _locate_table6_candidate(
         full_audits = full_error.audits
 
     inset = float(page.width) * PAGE_FRAME_EXCLUSION_RATIO
-    cropped = page.crop((inset, 0, float(page.width) - inset, float(page.height)))
+    cropped = detection_page.crop((inset, 0, float(page.width) - inset, float(page.height)))
     inset_tables = cropped.find_tables(TABLE_SETTINGS)
     inset_extracted = [table.extract() for table in inset_tables]
     try:
