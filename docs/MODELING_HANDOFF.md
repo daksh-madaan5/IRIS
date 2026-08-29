@@ -1,8 +1,8 @@
 # PAIMANA Modeling Handoff
 
 **Updated**: 2026-08-29  
-**Version**: 1.6 (Controlled CatBoost Nonlinear Challenger Completed)  
-**Phase**: Flagship H=3 controlled CatBoost nonlinear challenger comparison complete — XGBoost/LightGBM/RF not implemented; calibration and production modeling deferred.
+**Version**: 1.7 (Model Selection Formally Recorded & Calibration/Policy Design Specified)  
+**Phase**: Model-family selections formally recorded (Legacy PREFER_CATBOOST, Modern KEEP_LOGISTIC); calibration scheme and operational decision-policy designed (`docs/calibration_policy.md`). Calibration and operational threshold code implementation deferred.
 
 ---
 
@@ -710,16 +710,53 @@ Feature importance averaged across walk-forward folds confirms:
 ### Explicit Regime Recommendations
 
 - **Legacy Regime**: **`PREFER_CATBOOST`**  
-  `catboost_full_v1__unweighted` significantly outperforms the locked balanced Logistic benchmark ($\Delta\text{AP} = +0.0674$, 95% project-cluster CI: $+0.0376$ to $+0.0955$, $p < 0.05$). Furthermore, it resolves the severe probability distortion of the balanced Logistic baseline, reducing ECE from 0.3340 to 0.0287 and Brier score from 0.1957 to 0.0720.
-- **Modern Regime**: **`INCONCLUSIVE`** (or **`KEEP_LOGISTIC`** for model parsimony)  
-  `catboost_full_v1__balanced` achieves a modest point-estimate gain ($\Delta\text{AP} = +0.0089$), but the paired 95% project-cluster CI spans zero ($-0.0196$ to $+0.0338$), indicating no statistically significant difference from the linear `logistic_static_only__unweighted` baseline (AP 0.7587). The unweighted static Logistic model remains highly competitive and parsimonious in the modern era.
-
-### Exact Next Steps for Future Agent
-
-1. **Model Calibration**: Implement within-fold calibration (e.g. Platt scaling / Isotonic regression fit strictly on walk-forward training folds) for the selected Legacy CatBoost model and Modern Logistic model.
-2. **Operational Decision Thresholds**: Perform threshold selection based on training-fold precision/recall operating constraints (e.g. minimum 50% or 70% recall) and evaluate out-of-fold cost/utility.
-3. **Secondary Targets**: Extend the validated ML pipeline to secondary targets (`target_exp_non_improvement_3m`, `target_progress_non_improvement_3m`, `target_effective_cost_esc_3m`).
+  `catboost_full_v1__unweighted` outperforms the locked balanced Logistic benchmark ($\Delta\text{AP} = +0.0674$, 95% project-cluster CI: $+0.0376$ to $+0.0955$; the CI strictly excludes zero). Furthermore, it resolves the severe probability distortion of the balanced Logistic baseline, reducing ECE from 0.3340 to 0.0287 and Brier score from 0.1957 to 0.0720.
+- **Modern Regime**: **`KEEP_LOGISTIC`**  
+  `catboost_full_v1__balanced` achieves a minor point-estimate gain ($\Delta\text{AP} = +0.0089$), but the paired 95% project-cluster CI spans zero ($-0.0196$ to $+0.0338$). No statistically distinguishable CatBoost improvement was demonstrated; Logistic is preferred for parsimony.
 
 ---
 
-*Flagship H=3 dataset construction, baseline evaluation, robustness audit, regime-specific Logistic refinement, and controlled CatBoost nonlinear challenger comparison complete. No further nonlinear models or calibration fit. Both canonical datasets preserved unchanged.*
+## 10. Formal Record of Model-Family Decisions
+
+| Regime | Model Decision | Selected Specification | Key Empirical Evidence |
+|---|---|---|---|
+| **Legacy** (Jan 2023 – Jun 2025) | **`PREFER_CATBOOST`** | `catboost_full_v1__unweighted` | AP = **0.4071** (95% project-cluster CI: 0.3541–0.4578). Paired $\Delta\text{AP}$ vs balanced Logistic = **+0.0674** (95% project-cluster CI: **+0.0376 to +0.0955**; CI strictly excludes zero). Resolves severe probability distortion without class weighting: Brier = **0.0720**, ECE = **0.0287** (vs 0.1957 and 0.3340 in balanced Logistic). |
+| **Modern** (Jul 2025 – Jul 2026) | **`KEEP_LOGISTIC`** | `logistic_static_only__unweighted` | AP = **0.7587** (95% project-cluster CI: 0.7340–0.7861). CatBoost best challenger $\Delta\text{AP} = +0.0090$ (95% project-cluster CI: **−0.0196 to +0.0338**; CI spans zero). No statistically distinguishable CatBoost improvement was demonstrated; Logistic is preferred for parsimony. |
+
+**Policy Boundary**: Model-family selection is closed for IRIS v1. No further model families (XGBoost, LightGBM, Random Forest, Neural Networks) and no secondary targets shall be introduced in this phase.
+
+---
+
+## 11. Calibration Strategy & Operational Decision-Policy Design
+
+The complete design specification is established in [`docs/calibration_policy.md`](file:///d:/coding/PAIMANA/docs/calibration_policy.md). Key design tenets:
+
+1. **Legacy CatBoost Calibration**:
+   - Native probabilities are well-calibrated (ECE 0.0287, Brier 0.0720). No active post-hoc calibration layer is required for IRIS v1.
+   - Diagnostic Platt check run on historical nested OOF data prior to deployment for fold-stability monitoring.
+2. **Modern Logistic Temporal Calibration Scheme**:
+   - Systematic underprediction (ECE 0.1405, mean probability ~0.38 vs 0.4493 prevalence).
+   - Strict embargo ($T_{\text{train}} + 3 < E$) enforced at both main-fold and nested sub-fold levels.
+   - Platt scaling fit on raw logits ($z_i = w^T x_i + b_0$) from chronological nested OOF predictions generated by sub-models.
+   - Early Modern folds lacking mature sub-embargo history (M1–M3) structurally **remain uncalibrated** (raw scores reported). Folds M4 and M5 utilize embargo-safe nested OOF calibration data.
+   - Isotonic regression remains a secondary diagnostic comparator; not used operationally.
+3. **Operational Decision Policies**:
+   - **No In-Sample Fallback**: If strict embargo-safe nested OOF history is insufficient, mark the operational threshold UNAVAILABLE for that fold and report threshold-free metrics only.
+   - **Policy A (Fixed Recall Floor)** is recommended primary: chooses highest threshold satisfying $\text{Recall}_{\text{OOF}}(\tau) \ge r_{\min}$ (highest-precision feasible threshold). Target recall floor $r_{\min} \in \{0.50, 0.60, 0.70, 0.80\}$ evaluated historically; achieved recall on the evaluation fold is always reported.
+   - **Candidate Capacity Constraint (Alert Cap)**: If applied, cap takes priority over recall floor, causing achieved recall to fall below $r_{\min}$; shortfall and post-cap recall must always be explicitly reported.
+   - **Policy B (Precision Floor)** is secondary; **Policy C (Top-$K$)** is supplemental; **Policy D (Cost-Sensitive)** is deferred until stakeholder cost elicitation.
+
+### Exact Next Steps for Future Agent
+
+1. **Implement Nested OOF Calibration & Threshold Module** (only upon explicit authorization):
+   - Implement nested temporal OOF prediction generation under recursive sub-embargo ($T' + 3 < T$).
+   - Implement Platt scaling on raw decision logits for Modern Logistic.
+   - Implement frozen threshold selection from historical OOF curves (Policy A with candidate $r_{\min} \in \{0.50, 0.60, 0.70, 0.80\}$) and evaluation-fold scoring.
+2. **Operational Validation & Reporting**:
+   - Generate evaluation artifacts recording all score-level, threshold-level (including achieved recall and alert counts), diagnostic, and calibration metrics.
+3. **Secondary Targets** (deferred to later phase):
+   - Extend validated pipeline to secondary targets (`target_exp_non_improvement_3m`, `target_progress_non_improvement_3m`, `target_effective_cost_esc_3m`).
+
+---
+
+*Flagship H=3 model-family decisions formally recorded. Calibration and operational decision-policy designed (`docs/calibration_policy.md`). Both canonical datasets preserved unchanged.*
