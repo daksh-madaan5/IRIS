@@ -80,6 +80,7 @@ Never automatically integrate the proposed crosswalk, create `stable_project_id`
 ## Supported layout adapters
 
 - `legacy-annexure-xviii-six-column-v1`: April and May 2024 only. This is `Annexure XVIII: Details of On-going Projects`, not Table 6/7. It contains serial, project, approval, completion triplet, cost triplet, and expenditure triplet columns, while structurally omitting project code, agency, ministry, Start Date, and physical progress. Output must remain under `data/cleaned_uncoded/` and is not eligible for canonical integration.
+- `legacy-detail-ongoing-nine-column-milestones-v1`: October-November 2023 and January-March 2024. This full-population coded detail table embeds project code, agency, and state in the project cell; Sector is hierarchical. Start Date, Ministry, and physical-progress percentage are structurally absent. Preserve milestone achieved/total text in raw extraction and leave canonical `physical_progress` empty. October 2023's standalone agency headings and final identity-only continuation are accepted only by their narrow source-verified signatures.
 - `legacy-all-ongoing-nine-column-v1`: June through October 2024, December 2024, and January through June 2025. The reports call the project list Table 7. Columns include separate State and Sector, but no Ministry or Start Date. Project codes are legacy formats. Original/revised/anticipated triplets require legacy parsing. January and March 2025 have character-spaced embedded date text and use `Mon-YY`; parser compaction must not alter `*_raw` values.
 - `legacy-all-ongoing-nine-column-progress-only-v1`: November 2024 only. It has the same verified legacy nine-column semantics, but the final header is printed `Progress (%)` rather than `Physical Progress (%)`. Keep this distinct signature narrow; do not accept arbitrary progress-only tables without the full positional legacy header match.
 - `table6-eight-column-approval-only-v1`: July 2025 only. This verified Table 6 variant has Date of Approval without Start Date; keep `start_date` empty.
@@ -163,7 +164,7 @@ Do not point that CLI at a single new PDF if the accepted multi-month `projects_
 Explicit accepted-range rebuild command:
 
 ```powershell
-python -m src.build_dataset.monthly --months 2024-06 2024-07 2024-08 2024-09 2024-10 2024-11 2024-12 2025-01 2025-02 2025-03 2025-04 2025-05 2025-06 2025-07 2025-08 2025-09 2025-10 2025-11 2025-12 2026-01 2026-02 2026-03 2026-04 2026-05 2026-06 2026-07
+python -m src.build_dataset.monthly --months 2023-10 2023-11 2024-01 2024-02 2024-03 2024-06 2024-07 2024-08 2024-09 2024-10 2024-11 2024-12 2025-01 2025-02 2025-03 2025-04 2025-05 2025-06 2025-07 2025-08 2025-09 2025-10 2025-11 2025-12 2026-01 2026-02 2026-03 2026-04 2026-05 2026-06 2026-07
 ```
 
 Reproduce the diagnostic June-July crosswalk outputs only when identity diagnostics are explicitly requested:

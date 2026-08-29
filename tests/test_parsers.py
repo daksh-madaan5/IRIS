@@ -108,6 +108,28 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(cleaned["revised_cost"], 5677.0)
         self.assertEqual(cleaned["cumulative_expenditure"], 6209.77)
 
+    def test_detail_milestones_reconstructs_visual_state_word_wrap(self):
+        from src.extraction.pipeline import _clean_detail_milestones_row
+
+        pending = {
+            "serial": 1,
+            "source_page": 1,
+            "source_pages": "1-2",
+            "source_row_number": 1,
+            "sector": "WATER RESOURCES",
+            "cells": [
+                "1",
+                "PROJECT - [N30000004],UKJalNigam,UTTARAKHA\nND",
+                "3/2017",
+                "11/2019\n(-)\n[2/2022]",
+                "158.00\n(-)\n[158.00]",
+                "105.75\n(0.00)\n[0]",
+                "0/0",
+            ],
+        }
+        cleaned = _clean_detail_milestones_row(pending, "2023-10", "FR_oct_2023.pdf")
+        self.assertEqual(cleaned["state"], "UTTARAKHAND")
+
 
 if __name__ == "__main__":
     unittest.main()

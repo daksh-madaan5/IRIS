@@ -96,7 +96,8 @@ class Generated2024Q2AcceptanceTests(unittest.TestCase):
         summary = json.loads(
             (self.root / "data" / "validation" / "combined_summary.json").read_text(encoding="utf-8")
         )
-        self.assertEqual(summary["report_months"][0], "2024-01")
+        self.assertEqual(summary["report_months"][0], "2023-10")
+        self.assertNotIn("2023-12", summary["report_months"])
         self.assertIn("2024-06", summary["report_months"])
         self.assertNotIn("2024-04", summary["report_months"])
         self.assertNotIn("2024-05", summary["report_months"])

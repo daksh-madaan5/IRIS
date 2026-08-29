@@ -252,6 +252,23 @@ class TableSelectionRegressionTests(unittest.TestCase):
                 self.assertEqual(len(selected[header_index]), 9)
                 self.assertIn("si.no", selected[header_index][0].lower())
 
+    def test_october_november_2023_select_by_own_milestones_signature(self):
+        cases = (
+            ("data/raw/2023/FR_oct_2023.pdf", 92),
+            ("data/raw/2023/FR_nov_2023.pdf", 417),
+        )
+        for path, page_number in cases:
+            with self.subTest(path=path):
+                with pdfplumber.open(self.root / path) as pdf:
+                    selected, _, _, audits, _ = _locate_table6_candidate(
+                        pdf.pages[page_number - 1], page_number
+                    )
+                matching = [audit for audit in audits if audit["matches_table6_signature"]]
+                self.assertEqual(len(matching), 1)
+                self.assertEqual(matching[0]["layout_version"], LEGACY_DETAIL_MILESTONES_LAYOUT)
+                self.assertEqual(len(selected[1]), 9)
+                self.assertIn("si.no", selected[1][0].lower())
+
     def test_detail_milestones_continuation_requires_established_header(self):
         with pdfplumber.open(self.root / "data/raw/2024/FR_jan_2024.pdf") as pdf:
             page = pdf.pages[96]  # Page 97 (continuation)
@@ -262,6 +279,23 @@ class TableSelectionRegressionTests(unittest.TestCase):
         self.assertEqual(len(matching), 1)
         self.assertEqual(matching[0]["layout_version"], LEGACY_DETAIL_MILESTONES_LAYOUT)
         self.assertEqual(len(selected[0]), 7)
+
+    def test_detail_milestones_final_identity_fragment_requires_established_header(self):
+        with pdfplumber.open(self.root / "data/raw/2023/FR_oct_2023.pdf") as pdf:
+            page = pdf.pages[214]  # Page 215: final identity suffix and total only.
+            with self.assertRaisesRegex(TableCandidateSelectionError, "found 0"):
+                _locate_table6_candidate(page, 215, legacy_header_established=False)
+            selected, _, _, audits, _ = _locate_table6_candidate(
+                page,
+                215,
+                legacy_header_established=LEGACY_DETAIL_MILESTONES_LAYOUT,
+            )
+        matching = [audit for audit in audits if audit["matches_table6_signature"]]
+        self.assertEqual(len(matching), 1)
+        self.assertEqual(matching[0]["layout_version"], LEGACY_DETAIL_MILESTONES_LAYOUT)
+        self.assertEqual(matching[0]["project_row_count"], 0)
+        self.assertEqual(matching[0]["detail_identity_continuation_rows"], 1)
+        self.assertIn("[N30000004]", selected[0][1])
 
 
 if __name__ == "__main__":

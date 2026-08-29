@@ -90,6 +90,13 @@ class LongitudinalValidationTests(unittest.TestCase):
         self.assertEqual(rows[later][0]["sector"], "COAL ")
         self.assertEqual(rows[later][0]["state"], " BIHAR ")
 
+    def test_calendar_gap_is_not_an_adjacent_month_transition(self):
+        from src.build_dataset.monthly import _are_consecutive_months
+
+        self.assertTrue(_are_consecutive_months("2023-10", "2023-11"))
+        self.assertTrue(_are_consecutive_months("2023-12", "2024-01"))
+        self.assertFalse(_are_consecutive_months("2023-11", "2024-01"))
+
 
 if __name__ == "__main__":
     unittest.main()

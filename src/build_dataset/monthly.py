@@ -50,6 +50,14 @@ def _normalize_diagnostic(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
 
+def _are_consecutive_months(earlier: str, later: str) -> bool:
+    earlier_year, earlier_month = (int(part) for part in earlier.split("-"))
+    later_year, later_month = (int(part) for part in later.split("-"))
+    expected_year = earlier_year + (1 if earlier_month == 12 else 0)
+    expected_month = 1 if earlier_month == 12 else earlier_month + 1
+    return (later_year, later_month) == (expected_year, expected_month)
+
+
 def _pair_summary(earlier: str, later: str, rows_by_month: dict[str, list[dict[str, str]]]) -> dict[str, Any]:
     left = {row["project_code"]: row for row in rows_by_month[earlier]}
     right = {row["project_code"]: row for row in rows_by_month[later]}
@@ -124,7 +132,11 @@ def rebuild(root: Path, months: tuple[str, ...] = DEFAULT_MONTHS) -> tuple[Path,
         writer.writeheader()
         writer.writerows(records)
 
-    transitions = [_pair_summary(a, b, rows_by_month) for a, b in zip(months, months[1:])]
+    transitions = [
+        _pair_summary(a, b, rows_by_month)
+        for a, b in zip(months, months[1:])
+        if _are_consecutive_months(a, b)
+    ]
     longitudinal_warning_codes = sorted(
         {code for transition in transitions for code in transition["longitudinal_warning_counts"] if code != "total"}
     )
