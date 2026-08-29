@@ -12,6 +12,7 @@ from typing import Any, Iterable
 
 
 MONTHS = [
+    *[f"2023-{month:02d}" for month in range(1, 12)],
     "2024-01",
     "2024-02",
     "2024-03",
@@ -30,6 +31,7 @@ ERAS = {
     "six_digit_id_era": [month for month in MONTHS if month >= "2025-07"],
 }
 VERIFIED_LAYOUT_BY_MONTH = {
+    **{f"2023-{month:02d}": "legacy-detail-ongoing-nine-column-milestones-v1" for month in range(1, 12)},
     "2024-01": "legacy-detail-ongoing-nine-column-milestones-v1",
     "2024-02": "legacy-detail-ongoing-nine-column-milestones-v1",
     "2024-03": "legacy-detail-ongoing-nine-column-milestones-v1",
@@ -196,6 +198,9 @@ def observation_summary(rows: list[dict[str, str]], era_months: list[str]) -> di
         "projects_with_at_least_9_observations": sum(value >= 9 for value in counts),
         "projects_with_at_least_12_observations": sum(value >= 12 for value in counts),
         "projects_with_at_least_16_observations": sum(value >= 16 for value in counts),
+        "projects_with_at_least_18_observations": sum(value >= 18 for value in counts),
+        "projects_with_at_least_24_observations": sum(value >= 24 for value in counts),
+        "projects_with_at_least_27_observations": sum(value >= 27 for value in counts),
         "projects_present_in_every_era_month": sum(value == len(era_months) for value in counts),
     }
 
@@ -221,9 +226,21 @@ def monthly_coverage(rows: list[dict[str, str]], layouts: dict[str, str]) -> lis
                     "end of identifier era; June-to-July redesign is not churn"
                     if month == "2025-06"
                     else (
-                        "comparison across 3-month gap (April/May uncoded)"
-                        if month == "2024-06"
-                        else ("right-censored dataset endpoint" if following is None else "same-era comparison")
+                        "precedes 2-month gap (2023-12 unavailable)"
+                        if month == "2023-11"
+                        else (
+                            "comparison across 2-month gap (2023-12 unavailable)"
+                            if month == "2024-01"
+                            else (
+                                "precedes 3-month gap (April/May uncoded)"
+                                if month == "2024-03"
+                                else (
+                                    "comparison across 3-month gap (April/May uncoded)"
+                                    if month == "2024-06"
+                                    else ("right-censored dataset endpoint" if following is None else "same-era comparison")
+                                )
+                            )
+                        )
                     )
                 )
             )
@@ -541,7 +558,7 @@ def category_coverage(rows: list[dict[str, str]]) -> dict[str, Any]:
 
 def horizon_eligibility(rows: list[dict[str, str]]) -> dict[str, Any]:
     result: dict[str, Any] = {
-        "definition": "Primary eligibility requires the same exact source project code in every report month from T through T+H within one identifier era. Coverage ceiling only requires H later report months in the era and ignores project attrition.",
+        "definition": "Primary eligibility requires the same exact source project code in every report month from T through T+H within one identifier era. Coverage ceiling only requires H later report months in the era and ignores project attrition. Cost escalation is defined as a future upward reported cost revision (revised_cost_{T+H} > revised_cost_T). Schedule revision is defined as a future schedule extension (revised_completion_date_{T+H} > revised_completion_date_T). Stagnation is defined as zero delta across the window.",
         "eras": {},
     }
     for era, era_months in ERAS.items():
@@ -567,6 +584,13 @@ def horizon_eligibility(rows: list[dict[str, str]]) -> dict[str, Any]:
             exp_comp = 0
             exp_stagnant = 0
 
+            cost_up_endpoint_projects = set()
+            cost_up_any_projects = set()
+            sched_up_endpoint_projects = set()
+            sched_up_any_projects = set()
+            prog_stagnant_projects = set()
+            exp_stagnant_projects = set()
+
             for row in era_rows:
                 p = row["project_code"]
                 T = row["report_month"]
@@ -586,6 +610,7 @@ def horizon_eligibility(rows: list[dict[str, str]]) -> dict[str, Any]:
                             cost_comp += 1
                             if c_end > c_start:
                                 cost_up_endpoint += 1
+                                cost_up_endpoint_projects.add(p)
                         costs_in_win = [
                             numeric(w["revised_cost"])
                             for w in window_rows
@@ -593,6 +618,7 @@ def horizon_eligibility(rows: list[dict[str, str]]) -> dict[str, Any]:
                         ]
                         if len(costs_in_win) >= 2 and max(costs_in_win) > costs_in_win[0]:
                             cost_up_any += 1
+                            cost_up_any_projects.add(p)
 
                         # Schedule
                         d_start = window_rows[0]["revised_completion_date"]
@@ -601,6 +627,7 @@ def horizon_eligibility(rows: list[dict[str, str]]) -> dict[str, Any]:
                             sched_comp += 1
                             if month_distance(d_start, d_end) > 0:
                                 sched_up_endpoint += 1
+                                sched_up_endpoint_projects.add(p)
                         dates_in_win = [
                             w["revised_completion_date"]
                             for w in window_rows
@@ -610,6 +637,7 @@ def horizon_eligibility(rows: list[dict[str, str]]) -> dict[str, Any]:
                             month_distance(dates_in_win[0], d) > 0 for d in dates_in_win[1:]
                         ):
                             sched_up_any += 1
+                            sched_up_any_projects.add(p)
 
                         # Progress stagnation
                         p_start = numeric(window_rows[0]["physical_progress"])
@@ -618,6 +646,7 @@ def horizon_eligibility(rows: list[dict[str, str]]) -> dict[str, Any]:
                             prog_comp += 1
                             if p_end == p_start:
                                 prog_stagnant += 1
+                                prog_stagnant_projects.add(p)
 
                         # Expenditure stagnation
                         e_start = numeric(window_rows[0]["cumulative_expenditure"])
@@ -626,6 +655,7 @@ def horizon_eligibility(rows: list[dict[str, str]]) -> dict[str, Any]:
                             exp_comp += 1
                             if e_end == e_start:
                                 exp_stagnant += 1
+                                exp_stagnant_projects.add(p)
 
             horizons[str(horizon)] = {
                 "complete_project_history_observations": complete,
@@ -635,23 +665,45 @@ def horizon_eligibility(rows: list[dict[str, str]]) -> dict[str, Any]:
                         "comparable_windows": cost_comp,
                         "upward_endpoint_changes": cost_up_endpoint,
                         "upward_endpoint_rate": rounded(cost_up_endpoint / cost_comp if cost_comp else None),
+                        "unique_projects_with_endpoint_escalation": len(cost_up_endpoint_projects),
                         "any_upward_window_changes": cost_up_any,
+                        "unique_projects_with_any_escalation": len(cost_up_any_projects),
+                        "approximate_class_imbalance": (
+                            f"1:{round((cost_comp - cost_up_endpoint) / cost_up_endpoint, 1)}"
+                            if cost_up_endpoint else "N/A"
+                        ),
                     },
                     "schedule_revision": {
                         "comparable_windows": sched_comp,
                         "upward_endpoint_extensions": sched_up_endpoint,
                         "upward_endpoint_rate": rounded(sched_up_endpoint / sched_comp if sched_comp else None),
+                        "unique_projects_with_endpoint_extension": len(sched_up_endpoint_projects),
                         "any_upward_window_extensions": sched_up_any,
+                        "unique_projects_with_any_extension": len(sched_up_any_projects),
+                        "approximate_class_imbalance": (
+                            f"1:{round((sched_comp - sched_up_endpoint) / sched_up_endpoint, 1)}"
+                            if sched_up_endpoint else "N/A"
+                        ),
                     },
                     "physical_progress_stagnation": {
                         "comparable_windows": prog_comp,
                         "stagnant_observations": prog_stagnant,
                         "stagnation_rate": rounded(prog_stagnant / prog_comp if prog_comp else None),
+                        "unique_projects_with_stagnation": len(prog_stagnant_projects),
+                        "approximate_class_imbalance": (
+                            f"1:{round((prog_comp - prog_stagnant) / prog_stagnant, 1)}"
+                            if prog_stagnant else "N/A"
+                        ),
                     },
                     "cumulative_expenditure_stagnation": {
                         "comparable_windows": exp_comp,
                         "stagnant_observations": exp_stagnant,
                         "stagnation_rate": rounded(exp_stagnant / exp_comp if exp_comp else None),
+                        "unique_projects_with_stagnation": len(exp_stagnant_projects),
+                        "approximate_class_imbalance": (
+                            f"1:{round((exp_comp - exp_stagnant) / exp_stagnant, 1)}"
+                            if exp_stagnant else "N/A"
+                        ),
                     },
                 },
             }
@@ -709,10 +761,12 @@ def write_json(path: Path, payload: Any) -> None:
 
 def run(root: Path) -> dict[str, Any]:
     rows, layouts = load_rows(root)
-    if len(rows) != 46568:
+    if len(rows) != 64608:
         raise ValueError(f"Unexpected canonical row count: {len(rows)}")
     if sorted({row["report_month"] for row in rows}) != MONTHS:
-        raise ValueError("Canonical month coverage differs from the accepted 29-month baseline")
+        raise ValueError("Canonical month coverage differs from the accepted 40-month baseline")
+
+    overall_counts = [len(items) for items in group_by_project(rows).values()]
 
     era_summaries = {}
     for era, era_months in ERAS.items():
@@ -757,6 +811,12 @@ def run(root: Path) -> dict[str, Any]:
                 "missing_project_codes": sum(is_missing(row["project_code"]) for row in rows),
                 "duplicate_project_month_keys": len(rows)
                 - len({(row["project_code"], row["report_month"]) for row in rows}),
+                "projects_with_at_least_3_observations": sum(v >= 3 for v in overall_counts),
+                "projects_with_at_least_6_observations": sum(v >= 6 for v in overall_counts),
+                "projects_with_at_least_12_observations": sum(v >= 12 for v in overall_counts),
+                "projects_with_at_least_18_observations": sum(v >= 18 for v in overall_counts),
+                "projects_with_at_least_24_observations": sum(v >= 24 for v in overall_counts),
+                "projects_with_at_least_30_observations": sum(v >= 30 for v in overall_counts),
             },
             "monthly": monthly_coverage(rows, layouts),
             "identifier_eras": era_summaries,

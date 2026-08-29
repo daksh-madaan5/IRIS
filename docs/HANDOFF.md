@@ -107,7 +107,7 @@ Detailed evidence and manual comparisons are in `reports/id_crosswalk_june_july_
 
 ## Last completed task
 
-The last completed task was January-March 2023 acceptance. All three full-monthly coded reports use the accepted milestones layout and produced 1,454, 1,418, and 1,449 rows with continuous serials, zero missing IDs, and zero duplicate keys. The rebuilt coded canonical dataset has 64,608 rows, 4,738 unique project identifiers, zero missing IDs, zero duplicate keys, and 111/111 tests passing. See `reports/extraction_acceptance_2023_01_to_2023_03.md`.
+The last completed task was the comprehensive read-only historical data readiness and coverage audit across the accepted 40-month canonical panel (2023-01 to 2026-07). The audit confirmed zero missing project codes, zero duplicate keys, quantified all longitudinal signals, diagnosed anomalous warning concentrations, evaluated 1M/3M/6M/12M prediction target opportunities, established history depths, and delivered the authoritative recommendation (`READY_FOR_TARGET_AND_FEATURE_DESIGN` for rolling early-warning targets, with completed-project tables required for final lifecycle outcome modeling). See `reports/ml_readiness_audit_2023_01_to_2026_07.md`.
 
 ## Next planned task
 
@@ -119,22 +119,23 @@ Recommended order for a new agent with no chat history:
 
 1. `AGENTS.md` - durable repository rules and safe commands.
 2. `README.md` - short pipeline overview.
-3. `reports/extraction_acceptance_2023_01_to_2023_03.md` - January-March 2023 acceptance, milestones layout, agency headings, diagnostics, and hashes.
-4. `reports/extraction_acceptance_2023_04_to_2023_06.md` - April-June 2023 acceptance, milestones layout, agency headings, diagnostics, and hashes.
-5. `reports/extraction_acceptance_2023_07_to_2023_09.md` - July-September 2023 acceptance, milestones layout, footer filter, diagnostics, and hashes.
-6. `reports/extraction_acceptance_2023_10_to_2023_11.md` - October-November 2023 acceptance and December gap.
-7. `reports/source_structure_assessment_2023_10_to_12.md` - late-2023 source classifications and quarterly-source boundary.
-8. `reports/extraction_acceptance_2024_01_to_2024_03.md` - 2024 milestones layout acceptance.
-9. `reports/extraction_acceptance_2024_04_to_2024_06.md` - uncoded April/May Annexure XVIII boundary and June Table 7 acceptance.
-10. `reports/id_crosswalk_june_july_2025.md` - identifier redesign investigation and limitations.
-11. `reports/data_dictionary.md` and `schemas/project_month.schema.json` - canonical fields. Note that the JSON schema's six-digit `project_code` regex predates the accepted legacy IDs; production validation in `src/validation/core.py` accepts all source formats.
-12. `reports/validation_rules.md` - cross-field warning meanings and QC-only metrics.
-13. `reports/manual_validation.md` and `tests/fixtures/manual_verified_records.csv` - source-checked records.
-14. `reports/extraction_comparison.md` - why native `pdfplumber` extraction was selected.
-15. `reports/longitudinal_warning_diagnostic_2026_01_07.md` and `data/validation/diagnostics/longitudinal_warning_diagnostic_2026_01_07.json` - diagnosis of later warning spikes.
-16. `reports/zero_expenditure_positive_progress_diagnostic_2026_06_07.md` - the focused zero-expenditure diagnostic.
-17. `src/extraction/pipeline.py`, `src/cleaning/parsers.py`, `src/validation/core.py`, and `src/build_dataset/monthly.py` - production implementation.
-18. The relevant `data/validation/manifest_YYYY_MM.json`, `quality_YYYY_MM.json`, `warnings_YYYY_MM.csv`, `rejected_YYYY_MM.csv`, `duplicates_YYYY_MM.csv`, and `qc_metrics_YYYY_MM.csv` before changing any accepted month.
+3. `reports/ml_readiness_audit_2023_01_to_2026_07.md` - comprehensive 40-month data readiness, longitudinal signal inventory, and modeling feasibility audit.
+4. `reports/extraction_acceptance_2023_01_to_2023_03.md` - January-March 2023 acceptance, milestones layout, agency headings, diagnostics, and hashes.
+5. `reports/extraction_acceptance_2023_04_to_2023_06.md` - April-June 2023 acceptance, milestones layout, agency headings, diagnostics, and hashes.
+6. `reports/extraction_acceptance_2023_07_to_2023_09.md` - July-September 2023 acceptance, milestones layout, footer filter, diagnostics, and hashes.
+7. `reports/extraction_acceptance_2023_10_to_2023_11.md` - October-November 2023 acceptance and December gap.
+8. `reports/source_structure_assessment_2023_10_to_12.md` - late-2023 source classifications and quarterly-source boundary.
+9. `reports/extraction_acceptance_2024_01_to_2024_03.md` - 2024 milestones layout acceptance.
+10. `reports/extraction_acceptance_2024_04_to_2024_06.md` - uncoded April/May Annexure XVIII boundary and June Table 7 acceptance.
+11. `reports/id_crosswalk_june_july_2025.md` - identifier redesign investigation and limitations.
+12. `reports/data_dictionary.md` and `schemas/project_month.schema.json` - canonical fields. Note that the JSON schema's six-digit `project_code` regex predates the accepted legacy IDs; production validation in `src/validation/core.py` accepts all source formats.
+13. `reports/validation_rules.md` - cross-field warning meanings and QC-only metrics.
+14. `reports/manual_validation.md` and `tests/fixtures/manual_verified_records.csv` - source-checked records.
+15. `reports/extraction_comparison.md` - why native `pdfplumber` extraction was selected.
+16. `reports/longitudinal_warning_diagnostic_2026_01_07.md` and `data/validation/diagnostics/longitudinal_warning_diagnostic_2026_01_07.json` - diagnosis of later warning spikes.
+17. `reports/zero_expenditure_positive_progress_diagnostic_2026_06_07.md` - the focused zero-expenditure diagnostic.
+18. `src/extraction/pipeline.py`, `src/cleaning/parsers.py`, `src/validation/core.py`, and `src/build_dataset/monthly.py` - production implementation.
+19. The relevant `data/validation/manifest_YYYY_MM.json`, `quality_YYYY_MM.json`, `warnings_YYYY_MM.csv`, `rejected_YYYY_MM.csv`, `duplicates_YYYY_MM.csv`, and `qc_metrics_YYYY_MM.csv` before changing any accepted month.
 
 Earlier acceptance reports remain useful for incremental history:
 
