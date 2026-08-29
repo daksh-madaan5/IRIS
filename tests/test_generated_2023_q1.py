@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 
-class Generated2023Q2AcceptanceTests(unittest.TestCase):
+class Generated2023Q1AcceptanceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.root = Path(__file__).resolve().parents[1]
@@ -23,9 +23,9 @@ class Generated2023Q2AcceptanceTests(unittest.TestCase):
 
     def test_monthly_structure_and_parse_acceptance(self):
         cases = {
-            "2023_04": (1605, 114, 218, 72),
-            "2023_05": (1681, 106, 218, 72),
-            "2023_06": (1643, 107, 217, 81),
+            "2023_01": (1454, 133, 227, 65),
+            "2023_02": (1418, 125, 217, 62),
+            "2023_03": (1449, 133, 227, 63),
         }
         for token, (count, first_page, last_page, warnings) in cases.items():
             with self.subTest(token=token):
@@ -49,9 +49,9 @@ class Generated2023Q2AcceptanceTests(unittest.TestCase):
 
     def test_source_boundaries_missing_state_and_raw_milestones(self):
         cases = {
-            "2023_04": ("1605", "114-115", "N04000079"),
-            "2023_05": ("1681", "106-107", "N04000079"),
-            "2023_06": ("1643", "107-108", "N04000078"),
+            "2023_01": ("1454", "133-134", "N04000081"),
+            "2023_02": ("1418", "126-127", "N04000082"),
+            "2023_03": ("1449", "134-135", "N04000082"),
         }
         for token, (last_serial, boundary_pages, boundary_code) in cases.items():
             rows = self._rows(token)
@@ -62,16 +62,17 @@ class Generated2023Q2AcceptanceTests(unittest.TestCase):
             boundary = next(row for row in rows if row["project_code"] == boundary_code)
             self.assertEqual(boundary["source_pages"], boundary_pages)
 
-        june = self._rows("2023_06")
-        empty_state_1 = next(row for row in june if row["project_code"] == "N42000009")
-        self.assertEqual(empty_state_1["agency"], "CPWD")
-        self.assertEqual(empty_state_1["state"], "")
+        feb = self._rows("2023_02")
+        empty_state_feb = next(row for row in feb if row["project_code"] == "N28000140")
+        self.assertEqual(empty_state_feb["agency"], "CPWD")
+        self.assertEqual(empty_state_feb["state"], "")
 
-        empty_state_2 = next(row for row in june if row["project_code"] == "N28000148")
-        self.assertEqual(empty_state_2["agency"], "PATNA METRO")
-        self.assertEqual(empty_state_2["state"], "")
+        mar = self._rows("2023_03")
+        empty_state_mar = next(row for row in mar if row["project_code"] == "N28000140")
+        self.assertEqual(empty_state_mar["agency"], "CPWD")
+        self.assertEqual(empty_state_mar["state"], "")
 
-        raw_path = self.root / "data" / "extracted" / "2023-04" / "raw_table6_rows.jsonl"
+        raw_path = self.root / "data" / "extracted" / "2023-01" / "raw_table6_rows.jsonl"
         raw_rows = [json.loads(line) for line in raw_path.read_text(encoding="utf-8").splitlines()]
         first_project = next(row for row in raw_rows if row["cells"][0] == "1")
         self.assertEqual(first_project["cells"][6], "83/87")
@@ -91,9 +92,9 @@ class Generated2023Q2AcceptanceTests(unittest.TestCase):
             for item in summary["adjacent_month_transitions"]
         }
         expected = {
-            "2023-04->2023-05": (1594, 11, 87, 172),
-            "2023-05->2023-06": (1626, 55, 17, 41),
-            "2023-06->2023-07": (1634, 9, 12, 37),
+            "2023-01->2023-02": (1406, 48, 12, 29),
+            "2023-02->2023-03": (1398, 20, 51, 16),
+            "2023-03->2023-04": (1428, 21, 177, 334),
         }
         for key, (both, earlier_only, later_only, warnings) in expected.items():
             transition = transitions[key]

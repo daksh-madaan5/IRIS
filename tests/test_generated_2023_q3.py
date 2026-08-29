@@ -76,12 +76,12 @@ class Generated2023Q3AcceptanceTests(unittest.TestCase):
 
     def test_combined_and_new_transitions(self):
         summary = json.loads(
-            (self.root / "data" / "validation" / "longitudinal_summary_2023_04_2026_07.json").read_text(
+            (self.root / "data" / "validation" / "longitudinal_summary_2023_01_2026_07.json").read_text(
                 encoding="utf-8"
             )
         )
-        self.assertEqual(summary["rows"], 60287)
-        self.assertEqual(summary["unique_projects"], 4649)
+        self.assertEqual(summary["rows"], 64608)
+        self.assertEqual(summary["unique_projects"], 4738)
         self.assertEqual(summary["duplicate_project_month_keys"], 0)
         self.assertNotIn("2023-12", summary["report_months"])
         transitions = {
@@ -105,7 +105,7 @@ class Generated2023Q3AcceptanceTests(unittest.TestCase):
         combined = self.root / "data" / "processed" / "projects_monthly.csv"
         self.assertEqual(
             hashlib.sha256(combined.read_bytes()).hexdigest().upper(),
-            "2301524D9A7AF597672716FB6D483FBBCCCBCAA9B9A57E0A154AC7E42F4878FA",
+            "9512A9881E17DFDED6E182D87A8DFB1C4EDBD36C0D9B8A7DA9FD1ABB7E002FBF",
         )
 
 
