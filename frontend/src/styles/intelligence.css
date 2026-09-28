@@ -3835,10 +3835,138 @@
   .terminal-inspection-drawer,
   .terminal-inspect-btn,
   .terminal-drawer-close-btn,
-  .inspection-sequence-node {
+  .inspection-sequence-node,
+  .terminal-nav-action {
     transition: none !important;
     transform: none !important;
   }
 }
+
+/* ==========================================================================
+   PR-16: INTELLIGENCE TERMINAL OPERATIONAL WORKSPACE
+   ========================================================================== */
+
+.terminal-navigation-bar {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+}
+
+.terminal-navigation-bar.header {
+  margin-right: 8px;
+}
+
+.terminal-navigation-bar.footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 14px 20px;
+  background: #FFFFFF;
+  border: 1px solid var(--color-border-hairline, #D6D8D2);
+  margin-top: 4px;
+}
+
+.terminal-navigation-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.terminal-nav-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-decoration: none;
+  padding: 7px 12px;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+
+.terminal-nav-action.primary {
+  background: var(--color-primary-950, #0C1F17);
+  color: #FFFFFF;
+  border: 1px solid var(--color-primary-950, #0C1F17);
+}
+
+.terminal-nav-action.primary:hover {
+  background: #1B382B;
+  border-color: #1B382B;
+}
+
+.terminal-nav-action.secondary {
+  background: #FFFFFF;
+  color: var(--color-primary-950, #0C1F17);
+  border: 1px solid var(--color-border-hairline, #D6D8D2);
+}
+
+.terminal-nav-action.secondary:hover {
+  border-color: var(--color-primary-950, #0C1F17);
+  background: #F8F9F7;
+}
+
+.terminal-nav-action.analytics-return {
+  background: #F8FAFC;
+  border-color: #CBD5E1;
+  color: #0F172A;
+}
+
+.terminal-nav-action.analytics-return:hover {
+  background: #F1F5F9;
+  border-color: #64748B;
+}
+
+/* Comparability & Boundary Indicators */
+.terminal-comparability-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: 2px;
+}
+
+.terminal-comparability-badge.limited {
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1px solid #FCD34D;
+}
+
+.terminal-comparability-badge.comparable {
+  background: #ECFDF5;
+  color: #065F46;
+  border: 1px solid #A7F3D0;
+}
+
+.terminal-comparability-badge.not-established {
+  background: #F3F4F6;
+  color: #4B5563;
+  border: 1px solid #E5E7EB;
+}
+
+.terminal-movement-delta {
+  font-family: var(--font-mono, monospace);
+  font-weight: 700;
+  font-size: 11px;
+}
+
+.terminal-movement-delta.positive {
+  color: #B91C1C;
+}
+
+.terminal-movement-delta.negative {
+  color: #15803D;
+}
+
+.terminal-movement-delta.neutral {
+  color: #64748B;
+}
+
 
 

@@ -55,6 +55,11 @@ export const IntelligenceRiskInspectionGovernance: React.FC<
     Boolean(prevRecord) &&
     (prevRecord!.regime !== record.regime || prevRecord!.model_id !== record.model_id);
 
+  const isCalibrationTransition =
+    Boolean(prevRecord) &&
+    !isTransitionPoint &&
+    prevRecord!.calibration_active !== record.calibration_active;
+
   const modelFamily = getModelFamily(record.model_id);
   const explanationMethod = getHistoricalExplanationMethod(record.model_id);
 
@@ -79,6 +84,20 @@ export const IntelligenceRiskInspectionGovernance: React.FC<
             This evaluation marks a transition from {prevRecord.regime} ({prevRecord.model_id}) to{" "}
             {record.regime} ({record.model_id}). Predictions reflect their respective model
             architectures without retrospective score backfilling.
+          </p>
+        </div>
+      )}
+
+      {/* Dynamic Calibration Transition Notice */}
+      {isCalibrationTransition && prevRecord && (
+        <div className="inspection-transition-alert calibration" role="note">
+          <div className="inspection-transition-header">
+            <AlertTriangle size={14} className="text-amber-600" aria-hidden="true" />
+            <span className="font-bold">CALIBRATION TRANSITION AT THIS OBSERVATION</span>
+          </div>
+          <p className="inspection-transition-desc monospace">
+            Calibration state transitioned from {prevRecord.calibration_active ? "ACTIVE (PLATT)" : "RAW / UNCALIBRATED"} to{" "}
+            {record.calibration_active ? "ACTIVE (PLATT)" : "RAW / UNCALIBRATED"}. Calibrated probabilities across this boundary are not directly comparable.
           </p>
         </div>
       )}

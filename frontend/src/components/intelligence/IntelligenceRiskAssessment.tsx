@@ -61,7 +61,9 @@ export const IntelligenceRiskAssessment: React.FC<IntelligenceRiskAssessmentProp
       <div className="terminal-metrics-grid">
         {/* Risk Probability */}
         <div className="terminal-metric-cell primary-stat">
-          <span className="metric-cell-label">OPERATIONAL RISK PROBABILITY</span>
+          <span className="metric-cell-label">
+            {risk.calibration_active ? "CALIBRATED PROBABILITY" : "RAW MODEL PROBABILITY"}
+          </span>
           <div className="metric-cell-val probability monospace">{probabilityPercent}%</div>
           {risk.calibration_active && (
             <span className="metric-cell-sub monospace">RAW: {rawProbabilityPercent}%</span>

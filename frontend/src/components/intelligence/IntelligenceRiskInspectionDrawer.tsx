@@ -138,7 +138,11 @@ export const IntelligenceRiskInspectionDrawer: React.FC<
         />
 
         {/* Observed Risk Metrics & Portfolio Rank */}
-        <IntelligenceRiskInspectionMetrics record={record} />
+        <IntelligenceRiskInspectionMetrics
+          record={record}
+          history={history}
+          currentRisk={currentRisk}
+        />
 
         {/* Model Governance & Regime Provenance */}
         <IntelligenceRiskInspectionGovernance record={record} history={history} />

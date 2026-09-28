@@ -26,6 +26,7 @@ export const IntelligenceRiskInspectionHeader: React.FC<IntelligenceRiskInspecti
       <div className="inspection-header-top">
         <div className="inspection-eyebrow-group">
           <span className="terminal-section-eyebrow">HISTORICAL RISK EVALUATION</span>
+          <span className="inspection-historical-tag monospace">HISTORICAL OBSERVATION</span>
           <div className="inspection-context-badge monospace">
             <Calendar size={12} aria-hidden="true" />
             <span>OBSERVED {record.report_month}</span>

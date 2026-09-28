@@ -13,6 +13,11 @@ import {
 import type { ProjectRiskHistoryPoint } from "@/types/project.ts";
 import { IrisChartTooltip } from "@/components/common/charts/IrisChartTooltip.tsx";
 import { Eye } from "lucide-react";
+import {
+  detectObservationTransitions,
+  evaluateObservationMovement,
+  formatSignedDelta,
+} from "@/utils/historicalComparability.ts";
 
 interface IntelligenceRiskHistoryProps {
   history: ProjectRiskHistoryPoint[];
@@ -46,31 +51,63 @@ export const IntelligenceRiskHistory: React.FC<IntelligenceRiskHistoryProps> = (
     a.report_month.localeCompare(b.report_month)
   );
 
-  // Check for model / regime transition dynamically across history
+  // Check for model / regime / calibration transition dynamically across history
   const regimesPresent = Array.from(new Set(sortedHistory.map((h) => h.regime)));
   const modelsPresent = Array.from(new Set(sortedHistory.map((h) => h.model_id)));
+  const calibrationsPresent = Array.from(
+    new Set(sortedHistory.map((h) => (h.calibration_active ? "CALIBRATED" : "RAW")))
+  );
   const hasRegimeTransition = regimesPresent.length > 1;
   const hasModelTransition = modelsPresent.length > 1;
+  const hasCalibrationTransition = calibrationsPresent.length > 1;
 
-  // Find exact boundary months where regime or model changed
+  // Find exact boundary months where regime, model, or calibration changed
   const transitions: Array<{
     month: string;
     fromRegime: string;
     toRegime: string;
     fromModel: string;
     toModel: string;
+    fromCalib: string;
+    toCalib: string;
+    isModelOrRegime: boolean;
+    isCalibration: boolean;
+    typeLabel: string;
+    referenceLineLabel: string;
   }> = [];
 
   for (let i = 1; i < sortedHistory.length; i++) {
     const prev = sortedHistory[i - 1];
     const curr = sortedHistory[i];
-    if (prev.regime !== curr.regime || prev.model_id !== curr.model_id) {
+    const detected = detectObservationTransitions(prev, curr);
+    if (detected.length > 0) {
+      const isRegime = prev.regime !== curr.regime;
+      const isModel = prev.model_id !== curr.model_id;
+      const isCalib = prev.calibration_active !== curr.calibration_active;
+      const types: string[] = [];
+      if (isRegime) types.push("REGIME");
+      if (isModel) types.push("MODEL");
+      if (isCalib) types.push("CALIBRATION");
+
+      let labelText = `TRANSITION: ${prev.regime} → ${curr.regime}`;
+      if (!isRegime && isModel) {
+        labelText = `MODEL TRANSITION: ${prev.model_id} → ${curr.model_id}`;
+      } else if (!isRegime && !isModel && isCalib) {
+        labelText = `CALIBRATION TRANSITION: ${prev.calibration_active ? "CALIBRATED" : "RAW"} → ${curr.calibration_active ? "CALIBRATED" : "RAW"}`;
+      }
+
       transitions.push({
         month: curr.report_month,
         fromRegime: prev.regime,
         toRegime: curr.regime,
         fromModel: prev.model_id,
         toModel: curr.model_id,
+        fromCalib: prev.calibration_active ? "CALIBRATED" : "RAW",
+        toCalib: curr.calibration_active ? "CALIBRATED" : "RAW",
+        isModelOrRegime: isRegime || isModel,
+        isCalibration: isCalib,
+        typeLabel: types.join(" / "),
+        referenceLineLabel: labelText,
       });
     }
   }
@@ -126,13 +163,20 @@ export const IntelligenceRiskHistory: React.FC<IntelligenceRiskHistoryProps> = (
         </div>
       </div>
 
-      {/* Model / Regime Transition Notice (Rendered dynamically only when transition exists) */}
-      {(hasRegimeTransition || hasModelTransition) && (
+      {/* Model / Regime / Calibration Transition Notice (Rendered dynamically only when transition exists) */}
+      {(hasRegimeTransition || hasModelTransition || hasCalibrationTransition) && (
         <div className="terminal-transition-banner" role="note">
-          <span className="transition-tag">REGIME TRANSITION DETECTED</span>
+          <span className="transition-tag">
+            {hasRegimeTransition
+              ? "REGIME TRANSITION DETECTED"
+              : hasModelTransition
+              ? "MODEL TRANSITION DETECTED"
+              : "CALIBRATION TRANSITION DETECTED"}
+          </span>
           <span className="transition-desc">
-            Historical evaluations span multiple regimes ({regimesPresent.join(" → ")}) and model
-            architectures ({modelsPresent.join(" → ")}). Historical points reflect their original
+            Historical evaluations span multiple regimes ({regimesPresent.join(" → ")}), model
+            architectures ({modelsPresent.join(" → ")}), or calibration states (
+            {calibrationsPresent.join(" → ")}). Historical points reflect their original
             serving models and are not recomputed with subsequent model weights.
           </span>
         </div>
@@ -309,7 +353,7 @@ export const IntelligenceRiskHistory: React.FC<IntelligenceRiskHistoryProps> = (
                     strokeWidth={1.5}
                     strokeDasharray="4 4"
                     label={{
-                      value: `TRANSITION: ${t.fromRegime} → ${t.toRegime}`,
+                      value: t.referenceLineLabel,
                       position: "insideTopRight",
                       fill: "#78350F",
                       fontSize: 9,
@@ -403,6 +447,7 @@ export const IntelligenceRiskHistory: React.FC<IntelligenceRiskHistoryProps> = (
               <th scope="col">MONTH</th>
               <th scope="col">CALIBRATED RISK</th>
               <th scope="col">RAW PROB</th>
+              <th scope="col">MOVEMENT / COMPARABILITY</th>
               <th scope="col">RANK</th>
               <th scope="col">PERCENTILE</th>
               <th scope="col">REGIME</th>
@@ -412,8 +457,10 @@ export const IntelligenceRiskHistory: React.FC<IntelligenceRiskHistoryProps> = (
             </tr>
           </thead>
           <tbody>
-            {sortedHistory.map((item) => {
+            {sortedHistory.map((item, idx) => {
               const isSelected = item.report_month === selectedMonth;
+              const prevItem = idx > 0 ? sortedHistory[idx - 1] : null;
+              const mov = prevItem ? evaluateObservationMovement(prevItem, item, true) : null;
               return (
                 <tr
                   key={item.report_month}
@@ -427,6 +474,25 @@ export const IntelligenceRiskHistory: React.FC<IntelligenceRiskHistoryProps> = (
                   </td>
                   <td className="monospace muted">
                     {(item.raw_probability * 100).toFixed(1)}%
+                  </td>
+                  <td className="monospace text-xs">
+                    {!prevItem ? (
+                      <span className="terminal-movement-badge baseline">BASELINE</span>
+                    ) : mov?.status === "COMPARABLE" ? (
+                      <span
+                        className="terminal-movement-badge comparable"
+                        title={`Comparable movement vs ${prevItem.report_month}`}
+                      >
+                        {formatSignedDelta(mov.probabilityDelta, "pp")}
+                      </span>
+                    ) : (
+                      <span
+                        className="terminal-movement-badge limited"
+                        title={`Comparability limited across ${mov?.transitions.map((t) => t.type).join("/")} boundary`}
+                      >
+                        LIMITED ({mov?.transitions.map((t) => t.type).join("/")})
+                      </span>
+                    )}
                   </td>
                   <td className="monospace">#{item.risk_rank}</td>
                   <td className="monospace">P{(item.risk_percentile * 100).toFixed(1)}</td>

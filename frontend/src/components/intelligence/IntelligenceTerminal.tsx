@@ -11,6 +11,7 @@ import { IntelligenceRiskHistory } from "./IntelligenceRiskHistory.tsx";
 import { IntelligenceGovernance } from "./IntelligenceGovernance.tsx";
 import { IntelligenceDataAvailability } from "./IntelligenceDataAvailability.tsx";
 import { IntelligenceRiskInspectionDrawer } from "./IntelligenceRiskInspectionDrawer.tsx";
+import { IntelligenceNavigation } from "./IntelligenceNavigation.tsx";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner.tsx";
 
 interface IntelligenceTerminalProps {
@@ -192,6 +193,12 @@ export const IntelligenceTerminal: React.FC<IntelligenceTerminalProps> = ({
 
           {/* Unserved ML Domains / Data Availability */}
           <IntelligenceDataAvailability availability={intelligence.data_availability} />
+
+          {/* PR-16: Canonical Workspace Navigation Footer */}
+          <IntelligenceNavigation
+            projectCode={intelligence.project.project_code}
+            variant="footer"
+          />
 
           {/* PR-08: Historical Risk Evaluation Inspection Drawer */}
           <IntelligenceRiskInspectionDrawer

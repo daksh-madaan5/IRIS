@@ -64,6 +64,14 @@ export const IntelligenceTerminalHeader: React.FC<IntelligenceTerminalHeaderProp
 
         <div className="terminal-header-actions">
           <Link
+            to="/projects"
+            className="terminal-portfolio-nav-link"
+            aria-label="View project portfolio"
+            data-testid="header-link-portfolio"
+          >
+            <span>PROJECT PORTFOLIO</span>
+          </Link>
+          <Link
             to={`/projects/${encodeURIComponent(project.project_code)}`}
             className="terminal-nav-link"
             aria-label={`View full project detail for ${project.project_code}`}
