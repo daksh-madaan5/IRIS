@@ -48,4 +48,9 @@ htmlcov/
 .ruff_cache/
 .vscode/
 .idea/
+.aider-desk/
+.agents/skills/pptx/
 
+# Root temporary npm manifests (frontend has its own package.json)
+/package.json
+/package-lock.json
