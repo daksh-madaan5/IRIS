@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import sys
 from logging.config import fileConfig
@@ -31,11 +32,8 @@ def _resolve_db_url(url: str) -> str:
         clean = clean[5:]
     if clean.startswith("postgres://"):
         clean = "postgresql://" + clean[11:]
-    if clean.startswith("postgresql://"):
-        try:
-            import psycopg  # noqa: F401
-        except ImportError:
-            clean = "postgresql+psycopg2://" + clean[len("postgresql://"):]
+    if clean.startswith("postgresql://") and importlib.util.find_spec("psycopg") is None:
+        clean = "postgresql+psycopg2://" + clean[len("postgresql://"):]
     return clean
 
 

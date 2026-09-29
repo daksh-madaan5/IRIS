@@ -8,13 +8,6 @@ interface PortfolioRiskOverviewProps {
 
 export const PortfolioRiskOverview: React.FC<PortfolioRiskOverviewProps> = ({ summary }) => {
   const dist = summary?.score_distribution;
-  const min = dist?.minimum ?? 0;
-  const p25 = dist?.p25 ?? 0;
-  const median = dist?.median ?? 0;
-  const mean = dist?.mean ?? 0;
-  const p75 = dist?.p75 ?? 0;
-  const p95 = dist?.p95 ?? 0;
-  const max = dist?.maximum ?? 1;
 
   const evaluatedCount = summary?.project_count != null
     ? summary.project_count.toLocaleString()
