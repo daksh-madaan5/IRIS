@@ -130,6 +130,21 @@ class DatabaseConfigurationTests(unittest.TestCase):
             self.assertIsNotNone(eng)
             self.assertEqual(eng.name, "postgresql")
 
+    def test_11_create_db_engine_postgresql_scheme_uses_psycopg2_fallback(self) -> None:
+        """11. create_db_engine with bare postgresql:// or postgres:// routes to psycopg2 driver without ModuleNotFoundError."""
+        url = "postgresql://iris_user:secret_pass@db.example.com:5432/iris_prod"
+        eng = create_db_engine(url)
+        self.assertIsNotNone(eng)
+        self.assertEqual(eng.name, "postgresql")
+        self.assertEqual(eng.driver, "psycopg2")
+
+        # Also test legacy postgres://
+        legacy_url = "postgres://iris_user:secret_pass@db.example.com:5432/iris_prod"
+        eng_legacy = create_db_engine(legacy_url)
+        self.assertIsNotNone(eng_legacy)
+        self.assertEqual(eng_legacy.name, "postgresql")
+        self.assertEqual(eng_legacy.driver, "psycopg2")
+
 
 def test_sqlite_engine_creation() -> None:
     """Verify SQLite engine creates properly."""

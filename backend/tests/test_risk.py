@@ -351,3 +351,33 @@ def test_zero_future_label_exposure(client: TestClient, test_serving_repo: Servi
     record_str = json.dumps(record)
     for prohibited in prohibited_substrings:
         assert prohibited not in record_str, f"Prohibited label {prohibited} found in response"
+
+
+def test_optional_report_month_defaults_to_latest_cycle(
+    client: TestClient, test_serving_repo: ServingRepository
+) -> None:
+    """Verify that omitting report_month defaults to the authoritative default cycle instead of failing with 422."""
+    # 1. Summary endpoint without report_month
+    res_summary = client.get("/api/v1/risk/summary", params={"top_n": 5})
+    assert res_summary.status_code == 200
+    data_summary = res_summary.json()
+    assert data_summary["report_month"] == "2026-04"
+    assert len(data_summary["top_risk_projects"]) <= 5
+
+    # Direct mounted route
+    res_summary_direct = client.get("/risk/summary", params={"top_n": 5})
+    assert res_summary_direct.status_code == 200
+    assert res_summary_direct.json()["report_month"] == "2026-04"
+
+    # 2. Projects list endpoint without report_month
+    res_projects = client.get("/api/v1/risk/projects", params={"page": 1, "page_size": 2})
+    assert res_projects.status_code == 200
+    data_projects = res_projects.json()
+    assert data_projects["report_month"] == "2026-04"
+    assert len(data_projects["items"]) == 2
+
+    # 3. Project detail endpoint without report_month
+    res_project = client.get("/api/v1/risk/project/201234")
+    assert res_project.status_code == 200
+    assert res_project.json()["report_month"] == "2026-04"
+

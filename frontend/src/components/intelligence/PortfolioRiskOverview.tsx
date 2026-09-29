@@ -65,48 +65,9 @@ export const PortfolioRiskOverview: React.FC<PortfolioRiskOverviewProps> = ({ su
           <div style={{ width: "100%", marginTop: "8px" }}>
             <IrisQuantileDistributionChart
               distribution={dist}
-              height={160}
+              height={180}
               reportMonth={summary?.report_month}
             />
-
-            {/* Bottom Legend / Labels */}
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: "12px",
-                paddingTop: "8px",
-                borderTop: "1px solid var(--color-border-hairline)",
-                fontFamily: "var(--font-mono)",
-                fontSize: "11px",
-              }}
-            >
-              <span style={{ color: "var(--color-text-muted)" }}>
-                IQR (P25–P75): <strong style={{ color: "var(--color-primary-950)" }}>[{(p25 * 100).toFixed(1)}% — {(p75 * 100).toFixed(1)}%]</strong>
-              </span>
-
-              <span style={{ color: "#1A3C2B", fontWeight: 700 }}>
-                MEDIAN: {(median * 100).toFixed(1)}%
-              </span>
-
-              <span style={{ color: "var(--color-primary-950)" }}>
-                MEAN: {(mean * 100).toFixed(1)}%
-              </span>
-
-              <span style={{ color: "#BA1A1A", fontWeight: 700 }}>
-                95TH PERCENTILE: {(p95 * 100).toFixed(1)}%
-              </span>
-
-              <span style={{ color: "var(--color-text-muted)" }}>
-                MIN: {(min * 100).toFixed(2)}%
-              </span>
-
-              <span style={{ color: "var(--color-text-muted)" }}>
-                MAX: {(max * 100).toFixed(1)}%
-              </span>
-            </div>
           </div>
         </div>
 

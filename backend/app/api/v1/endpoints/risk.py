@@ -78,7 +78,9 @@ def get_risk_options(
     description="Retrieve portfolio-level score distributions, quantiles, regime metadata, sector risk summaries, and top-N ranked projects.",
 )
 def get_risk_summary(
-    report_month: Annotated[str, Query(description="Evaluation month as YYYY-MM")],
+    report_month: Annotated[
+        str | None, Query(description="Evaluation month as YYYY-MM")
+    ] = None,
     regime: Regime | None = None,
     top_n: Annotated[int, Query(ge=1, le=50, description="Number of top risk projects to include")] = 10,
     sector: str | None = None,
@@ -88,7 +90,10 @@ def get_risk_summary(
     search: Annotated[str | None, Query(max_length=200)] = None,
     repo: ServingRepository = Depends(get_serving_repository),
 ) -> dict[str, Any]:
-    month = _validate_month(report_month)
+    if report_month is not None:
+        month = _validate_month(report_month)
+    else:
+        month = repo.dashboard_options()["default_report_month"]
     normalized_search = search.strip() if search and search.strip() else None
     norm_sector = _normalize_filter(sector)
     norm_agency = _normalize_filter(agency)
@@ -172,7 +177,9 @@ def get_risk_summary(
     description="Retrieve paginated list of evaluated projects strictly ordered by risk rank, including calibrated probabilities and signed feature contributors.",
 )
 def list_risk_projects(
-    report_month: Annotated[str, Query(description="Evaluation month as YYYY-MM")],
+    report_month: Annotated[
+        str | None, Query(description="Evaluation month as YYYY-MM")
+    ] = None,
     page: Annotated[int, Query(ge=1, description="Page number (1-indexed)")] = 1,
     page_size: Annotated[int, Query(ge=1, le=100, description="Items per page (max 100)")] = 25,
     regime: Regime | None = None,
@@ -185,7 +192,10 @@ def list_risk_projects(
     search: Annotated[str | None, Query(max_length=200, description="Substring search on project code or name")] = None,
     repo: ServingRepository = Depends(get_serving_repository),
 ) -> dict[str, Any]:
-    month = _validate_month(report_month)
+    if report_month is not None:
+        month = _validate_month(report_month)
+    else:
+        month = repo.dashboard_options()["default_report_month"]
     if (
         min_risk_probability is not None
         and max_risk_probability is not None
@@ -327,11 +337,17 @@ def get_risk_targets(
 )
 def get_project_risk_record(
     project_code: str,
-    report_month: Annotated[str, Query(description="Evaluation month as YYYY-MM")],
+    report_month: Annotated[
+        str | None, Query(description="Evaluation month as YYYY-MM")
+    ] = None,
     repo: ServingRepository = Depends(get_serving_repository),
 ) -> dict[str, Any]:
     valid_code = _validate_project_code(project_code)
-    record = repo.get_record(valid_code, _validate_month(report_month))
+    if report_month is not None:
+        target_month = _validate_month(report_month)
+    else:
+        target_month = repo.dashboard_options()["default_report_month"]
+    record = repo.get_record(valid_code, target_month)
     if record is None:
         raise HTTPException(status_code=404, detail="Project-month risk record not found")
     return record

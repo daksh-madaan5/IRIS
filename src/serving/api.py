@@ -84,7 +84,9 @@ def create_app(
 
     @app.get("/risk/projects", response_model=ProjectListResponse)
     def projects(
-        report_month: Annotated[str, Query(description="Evaluation month as YYYY-MM")],
+        report_month: Annotated[
+            str | None, Query(description="Evaluation month as YYYY-MM")
+        ] = None,
         page: Annotated[int, Query(ge=1)] = 1,
         page_size: Annotated[int, Query(ge=1, le=100)] = 25,
         regime: Regime | None = None,
@@ -96,7 +98,10 @@ def create_app(
         state: str | None = None,
         search: Annotated[str | None, Query(max_length=200)] = None,
     ) -> dict[str, Any]:
-        month = _month(report_month)
+        if report_month is not None:
+            month = _month(report_month)
+        else:
+            month = store().dashboard_options()["default_report_month"]
         if (
             min_risk_probability is not None
             and max_risk_probability is not None
@@ -201,10 +206,16 @@ def create_app(
     @app.get("/risk/project/{project_code}", response_model=RiskRecord)
     def project(
         project_code: str,
-        report_month: Annotated[str, Query(description="Evaluation month as YYYY-MM")],
+        report_month: Annotated[
+            str | None, Query(description="Evaluation month as YYYY-MM")
+        ] = None,
     ) -> dict[str, Any]:
         valid_code = _validate_project_code(project_code)
-        record = store().get_record(valid_code, _month(report_month))
+        if report_month is not None:
+            target_month = _month(report_month)
+        else:
+            target_month = store().dashboard_options()["default_report_month"]
+        record = store().get_record(valid_code, target_month)
         if record is None:
             raise HTTPException(status_code=404, detail="Project-month risk record not found")
         return record
@@ -224,7 +235,9 @@ def create_app(
 
     @app.get("/risk/summary", response_model=SummaryResponse)
     def summary(
-        report_month: Annotated[str, Query(description="Evaluation month as YYYY-MM")],
+        report_month: Annotated[
+            str | None, Query(description="Evaluation month as YYYY-MM")
+        ] = None,
         regime: Regime | None = None,
         top_n: Annotated[int, Query(ge=1, le=50)] = 10,
         sector: str | None = None,
@@ -233,7 +246,10 @@ def create_app(
         state: str | None = None,
         search: Annotated[str | None, Query(max_length=200)] = None,
     ) -> dict[str, Any]:
-        month = _month(report_month)
+        if report_month is not None:
+            month = _month(report_month)
+        else:
+            month = store().dashboard_options()["default_report_month"]
         normalized_search = search.strip() if search and search.strip() else None
         norm_sector = _normalize_filter(sector)
         norm_agency = _normalize_filter(agency)

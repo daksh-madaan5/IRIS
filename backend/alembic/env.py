@@ -24,8 +24,24 @@ if config.config_file_name is not None:
 # Set target metadata for 'autogenerate' support
 target_metadata = Base.metadata
 
+
+def _resolve_db_url(url: str) -> str:
+    clean = url.strip()
+    if clean.startswith("jdbc:"):
+        clean = clean[5:]
+    if clean.startswith("postgres://"):
+        clean = "postgresql://" + clean[11:]
+    if clean.startswith("postgresql://"):
+        try:
+            import psycopg  # noqa: F401
+        except ImportError:
+            clean = "postgresql+psycopg2://" + clean[len("postgresql://"):]
+    return clean
+
+
 # Override sqlalchemy.url with dynamic application settings
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+resolved_db_url = _resolve_db_url(settings.DATABASE_URL)
+config.set_main_option("sqlalchemy.url", resolved_db_url)
 
 
 def run_migrations_offline() -> None:
@@ -45,7 +61,7 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
     configuration = config.get_section(config.config_ini_section) or {}
-    configuration["sqlalchemy.url"] = settings.DATABASE_URL
+    configuration["sqlalchemy.url"] = resolved_db_url
 
     connectable = engine_from_config(
         configuration,

@@ -90,16 +90,9 @@ export const RiskDistribution: React.FC<RiskDistributionProps> = ({
         <div style={{ padding: "16px 20px", background: "#FFFFFF", borderTop: "1px solid var(--color-border-hairline)" }}>
           <IrisQuantileDistributionChart
             distribution={distribution}
-            height={220}
+            height={200}
             reportMonth={reportMonth}
           />
-
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px", paddingTop: "12px", borderTop: "1px solid var(--color-border-hairline)", marginTop: "8px", fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--color-text-muted)" }}>
-            <span>IQR BOUND: [{(p25 * 100).toFixed(1)}% — {(p75 * 100).toFixed(1)}%]</span>
-            <span style={{ color: "#1A3C2B", fontWeight: 700 }}>MEDIAN: {(median * 100).toFixed(1)}%</span>
-            <span style={{ color: "var(--color-primary-950)" }}>MEAN: {(mean * 100).toFixed(1)}%</span>
-            <span style={{ color: "#BA1A1A", fontWeight: 700 }}>95TH TAIL RISK: {(p95 * 100).toFixed(1)}%</span>
-          </div>
         </div>
       </div>
     </section>

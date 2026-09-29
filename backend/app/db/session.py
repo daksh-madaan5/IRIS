@@ -27,6 +27,16 @@ def create_db_engine(database_url: str, echo: bool = False) -> Engine:
             connect_args={"check_same_thread": False},
             echo=echo,
         )
+
+    # In SQLAlchemy 2.1+, a bare 'postgresql://' scheme defaults to psycopg (v3).
+    # If psycopg is not installed, automatically map to 'postgresql+psycopg2://'
+    # so that the installed psycopg2-binary driver is used without ModuleNotFoundError.
+    if normalized_url.startswith("postgresql://"):
+        try:
+            import psycopg  # noqa: F401
+        except ImportError:
+            normalized_url = "postgresql+psycopg2://" + normalized_url[len("postgresql://"):]
+
     return create_engine(
         normalized_url,
         pool_size=settings.DB_POOL_SIZE,

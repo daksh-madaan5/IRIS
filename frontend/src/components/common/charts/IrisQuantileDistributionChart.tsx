@@ -56,98 +56,100 @@ export const IrisQuantileDistributionChart: React.FC<IrisQuantileDistributionCha
   ];
 
   return (
-    <div style={{ width: "100%", height, position: "relative" }} aria-label="Empirical Risk Quantile Distribution Chart">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px", fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--color-text-muted)" }}>
+    <div
+      style={{
+        width: "100%",
+        display: "flex",
+        flexDirection: "column",
+        gap: "10px",
+        position: "relative",
+      }}
+      aria-label="Empirical Risk Quantile Distribution Chart"
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px", fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--color-text-muted)" }}>
         <span>EMPIRICAL QUANTILE SUMMARY (PROBABILITY SCALE 0% → 100%)</span>
         <span>IQR: [{p25Val}% — {p75Val}%] | MEDIAN: {medianVal}% | MEAN: {meanVal}% | P95 TAIL: {p95Val}%</span>
       </div>
 
-      <ResponsiveContainer width="100%" height="80%">
-        <ComposedChart
-          margin={{ top: 20, right: 30, left: 30, bottom: 20 }}
-        >
-          <CartesianGrid stroke="#E2E3DF" strokeDasharray="3 3" vertical={true} horizontal={false} />
+      <div style={{ width: "100%", height: typeof height === "number" ? Math.max(height - 40, 140) : height, minHeight: "140px" }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart
+            margin={{ top: 22, right: 32, left: 32, bottom: 8 }}
+          >
+            <CartesianGrid stroke="#E2E3DF" strokeDasharray="3 3" vertical={true} horizontal={false} />
 
-          <XAxis
-            type="number"
-            dataKey="x"
-            domain={[0, 100]}
-            stroke="#606460"
-            tick={{ fill: "#606460", fontSize: 10, fontFamily: "var(--font-mono)", fontWeight: 600 }}
-            tickLine={{ stroke: "#D1D4D1" }}
-            axisLine={{ stroke: "#D1D4D1" }}
-            tickFormatter={(val: number) => `${val}%`}
-            ticks={[0, 20, 40, 60, 80, 100]}
-          />
-          <YAxis
-            type="number"
-            domain={[0, 2]}
-            hide
-          />
+            <XAxis
+              type="number"
+              dataKey="x"
+              domain={[0, 100]}
+              stroke="#606460"
+              tick={{ fill: "#606460", fontSize: 10, fontFamily: "var(--font-mono)", fontWeight: 600 }}
+              tickLine={{ stroke: "#D1D4D1" }}
+              axisLine={{ stroke: "#D1D4D1" }}
+              tickFormatter={(val: number) => `${val}%`}
+              ticks={[0, 20, 40, 60, 80, 100]}
+            />
+            <YAxis
+              type="number"
+              domain={[0, 2]}
+              hide
+            />
 
-          {/* Interquartile Range (IQR = P25 to P75) Reference Area on horizontal probability scale */}
-          <ReferenceArea
-            x1={p25Val}
-            x2={p75Val}
-            fill="#C5ECD3"
-            fillOpacity={0.5}
-            stroke="#1A3C2B"
-            strokeWidth={1}
-            strokeDasharray="3 3"
-          />
-
-          {/* Median Vertical Reference Line */}
-          {median > 0 && (
-            <ReferenceLine
-              x={medianVal}
+            {/* Interquartile Range (IQR = P25 to P75) Reference Area on horizontal probability scale */}
+            <ReferenceArea
+              x1={p25Val}
+              x2={p75Val}
+              fill="#C5ECD3"
+              fillOpacity={0.5}
               stroke="#1A3C2B"
-              strokeWidth={2}
-              label={{
-                value: `MEDIAN ${medianVal}%`,
-                position: "top",
-                fill: "#1A3C2B",
-                fontSize: 10,
-                fontFamily: "var(--font-mono)",
-                fontWeight: 700,
-              }}
-            />
-          )}
-
-          {/* Mean Vertical Reference Line */}
-          {mean > 0 && (
-            <ReferenceLine
-              x={meanVal}
-              stroke="#0D0E0D"
-              strokeWidth={1.5}
-              strokeDasharray="2 2"
-              label={{
-                value: `MEAN ${meanVal}%`,
-                position: "bottom",
-                fill: "#0D0E0D",
-                fontSize: 9,
-                fontFamily: "var(--font-mono)",
-                fontWeight: 600,
-              }}
-            />
-          )}
-
-          {/* P95 Tail Position Vertical Reference Line */}
-          {p95 > 0 && (
-            <ReferenceLine
-              x={p95Val}
-              stroke="#BA1A1A"
-              strokeWidth={2}
+              strokeWidth={1}
               strokeDasharray="3 3"
-              label={{
-                value: `P95 TAIL ${p95Val}%`,
-                position: "top",
-                fill: "#BA1A1A",
-                fontSize: 10,
-                fontFamily: "var(--font-mono)",
-                fontWeight: 700,
-              }}
             />
-          )}
+
+            {/* Median Vertical Reference Line */}
+            {median > 0 && (
+              <ReferenceLine
+                x={medianVal}
+                stroke="#1A3C2B"
+                strokeWidth={2}
+                label={{
+                  value: `MEDIAN ${medianVal}%`,
+                  position: "top",
+                  fill: "#1A3C2B",
+                  fontSize: 10,
+                  fontFamily: "var(--font-mono)",
+                  fontWeight: 700,
+                }}
+              />
+            )}
+
+            {/* Mean Vertical Reference Line (visual marker without clashing bottom label) */}
+            {mean > 0 && (
+              <ReferenceLine
+                x={meanVal}
+                stroke="#0D0E0D"
+                strokeWidth={1.5}
+                strokeDasharray="3 3"
+              />
+            )}
+
+            {/* P95 Tail Position Vertical Reference Line */}
+            {p95 > 0 && (
+              <ReferenceLine
+                x={p95Val}
+                stroke="#BA1A1A"
+                strokeWidth={2}
+                strokeDasharray="3 3"
+                label={{
+                  value: `P95 ${p95Val}%`,
+                  position: "top",
+                  fill: "#BA1A1A",
+                  fontSize: 10,
+                  fontFamily: "var(--font-mono)",
+                  fontWeight: 700,
+                }}
+              />
+            )}
 
           {/* Base midline baseline track */}
           <ReferenceLine
@@ -200,17 +202,31 @@ export const IrisQuantileDistributionChart: React.FC<IrisQuantileDistributionCha
           </Scatter>
         </ComposedChart>
       </ResponsiveContainer>
+    </div>
 
       {/* Axis Marker Labels Footer */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px", paddingTop: "6px", borderTop: "1px solid var(--color-border-hairline)", fontFamily: "var(--font-mono)", fontSize: "10px", color: "var(--color-text-muted)" }}>
-        <span>MIN: {minVal}%</span>
-        <span>P25: {p25Val}%</span>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "8px",
+          paddingTop: "6px",
+          borderTop: "1px solid var(--color-border-hairline)",
+          fontFamily: "var(--font-mono)",
+          fontSize: "10px",
+          color: "var(--color-text-muted)",
+        }}
+      >
+        <span>MIN: <strong>{minVal}%</strong></span>
+        <span>P25: <strong>{p25Val}%</strong></span>
         <span style={{ color: "#1A3C2B", fontWeight: 700 }}>MEDIAN: {medianVal}%</span>
         <span style={{ color: "var(--color-primary-950)", fontWeight: 600 }}>MEAN: {meanVal}%</span>
-        <span>P75: {p75Val}%</span>
-        <span>P90: {p90Val}%</span>
+        <span>P75: <strong>{p75Val}%</strong></span>
+        <span>P90: <strong>{p90Val}%</strong></span>
         <span style={{ color: "#BA1A1A", fontWeight: 700 }}>P95: {p95Val}%</span>
-        <span>MAX: {maxVal}%</span>
+        <span>MAX: <strong>{maxVal}%</strong></span>
       </div>
     </div>
   );
